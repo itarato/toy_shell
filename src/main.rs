@@ -15,7 +15,7 @@ enum Command {
     Invalid,
 }
 
-const SHELL_BUILTIN_COMMANDS: [&'static str; 3] = ["echo", "type", "exit"];
+const SHELL_BUILTIN_COMMANDS: [&'static str; 4] = ["echo", "type", "exit", "pwd"];
 
 fn parse_command(raw: &str) -> Command {
     if raw.starts_with("exit") {
