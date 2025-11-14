@@ -110,10 +110,10 @@ fn main() {
                 }
             }
             Command::Unknown(name, args) => {
-                if let Ok(mut child) = std::process::Command::new(name).args(&args).spawn() {
+                if let Ok(mut child) = std::process::Command::new(&name).args(&args).spawn() {
                     child.wait().expect("Failed waiting for children");
                 } else {
-                    println!("command error")
+                    println!("{}: command not found", name);
                 }
             }
             Command::Invalid => println!("{}: command not found", buf.trim()),
