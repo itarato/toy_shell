@@ -1,9 +1,9 @@
+use is_executable::IsExecutable;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 enum Command {
@@ -51,11 +51,13 @@ fn parse_command(raw: &str) -> Command {
     }
 }
 
-fn verify_executable(name: &str, env_paths: &Vec<&str>) -> Option<String> {
+fn verify_executable(name: &str, env_paths: &Vec<PathBuf>) -> Option<String> {
     for env_path in env_paths {
         let path = Path::new(&env_path).join(name);
         if let Ok(true) = std::fs::exists(&path) {
-            return Some(path.to_str().unwrap().into());
+            if path.is_executable() {
+                return Some(path.to_str().unwrap().into());
+            }
         }
     }
 
@@ -70,7 +72,7 @@ fn main() {
 
     let env_path = env_vars
         .get("PATH")
-        .map(|v| v.split(':').collect())
+        .map(|v| std::env::split_paths(v).collect())
         .unwrap_or(vec![]);
 
     loop {
