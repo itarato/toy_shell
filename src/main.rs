@@ -10,7 +10,8 @@ enum Command {
     Exit(i32),
     Echo(Vec<String>),
     Type(String),
-    Unknown,
+    Unknown(String, Vec<String>),
+    Invalid,
 }
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 3] = ["echo", "type", "exit"];
@@ -20,12 +21,12 @@ fn parse_command(raw: &str) -> Command {
         let exit_code = if raw.len() > 4 {
             let parts = raw.split(' ').collect::<Vec<_>>();
             if parts.len() != 2 {
-                return Command::Unknown;
+                return Command::Invalid;
             } else {
                 if let Ok(v) = i32::from_str_radix(parts[1], 10) {
                     v
                 } else {
-                    return Command::Unknown;
+                    return Command::Invalid;
                 }
             }
         } else {
@@ -42,12 +43,23 @@ fn parse_command(raw: &str) -> Command {
         Command::Echo(parts)
     } else if raw.starts_with("type") {
         if raw.len() <= 5 {
-            Command::Unknown
+            Command::Invalid
         } else {
             Command::Type(raw[5..].to_owned())
         }
     } else {
-        Command::Unknown
+        let mut parts = raw
+            .split(' ')
+            .filter(|s| s.len() > 0)
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>();
+        if parts.len() < 1 {
+            Command::Invalid
+        } else {
+            let name = parts[0].clone();
+            parts.remove(0);
+            Command::Unknown(name, parts)
+        }
     }
 }
 
@@ -97,7 +109,14 @@ fn main() {
                     }
                 }
             }
-            Command::Unknown => println!("{}: command not found", buf.trim()),
+            Command::Unknown(name, args) => {
+                if let Ok(mut child) = std::process::Command::new(name).args(&args).spawn() {
+                    child.wait().expect("Failed waiting for children");
+                } else {
+                    println!("command error")
+                }
+            }
+            Command::Invalid => println!("{}: command not found", buf.trim()),
         };
 
         io::stdout().flush().unwrap();
