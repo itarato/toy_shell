@@ -4,8 +4,11 @@ use std::io::{self, Write};
 enum Command {
     Exit(i32),
     Echo(Vec<String>),
+    Type(String),
     Unknown,
 }
+
+const SHELL_BUILTIN_COMMANDS: [&'static str; 3] = ["echo", "type", "exit"];
 
 fn parse_command(raw: &str) -> Command {
     if raw.starts_with("exit") {
@@ -32,6 +35,12 @@ fn parse_command(raw: &str) -> Command {
             .map(|s| s.to_owned())
             .collect::<Vec<String>>();
         Command::Echo(parts)
+    } else if raw.starts_with("type") {
+        if raw.len() <= 5 {
+            Command::Unknown
+        } else {
+            Command::Type(raw[5..].to_owned())
+        }
     } else {
         Command::Unknown
     }
@@ -50,6 +59,13 @@ fn main() {
         match parse_command(buf.trim()) {
             Command::Exit(exit_code) => std::process::exit(exit_code),
             Command::Echo(parts) => println!("{}", parts.join(" ")),
+            Command::Type(what) => {
+                if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
+                    println!("{} is a shell builtin", what);
+                } else {
+                    println!("{}: not found", what);
+                }
+            }
             Command::Unknown => println!("{}: command not found", buf.trim()),
         };
 
