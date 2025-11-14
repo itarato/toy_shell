@@ -11,6 +11,7 @@ enum Command {
     Echo(Vec<String>),
     Type(String),
     Unknown(String, Vec<String>),
+    Pwd,
     Invalid,
 }
 
@@ -47,6 +48,8 @@ fn parse_command(raw: &str) -> Command {
         } else {
             Command::Type(raw[5..].to_owned())
         }
+    } else if raw == "pwd" {
+        Command::Pwd
     } else {
         let mut parts = raw
             .split(' ')
@@ -116,6 +119,13 @@ fn main() {
                     println!("{}: command not found", name);
                 }
             }
+            Command::Pwd => println!(
+                "{}",
+                std::env::current_dir()
+                    .expect("Cannot retrieve current work dir")
+                    .to_str()
+                    .expect("Cannot stringify path")
+            ),
             Command::Invalid => println!("{}: command not found", buf.trim()),
         };
 
