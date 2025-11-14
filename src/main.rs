@@ -3,6 +3,7 @@ use std::io::{self, Write};
 
 enum Command {
     Exit(i32),
+    Echo(Vec<String>),
     Unknown,
 }
 
@@ -23,6 +24,14 @@ fn parse_command(raw: &str) -> Command {
             0
         };
         Command::Exit(exit_code)
+    } else if raw.starts_with("echo") {
+        let parts = raw
+            .split(' ')
+            .skip(1)
+            .filter(|s| s.len() > 0)
+            .map(|s| s.to_owned())
+            .collect::<Vec<String>>();
+        Command::Echo(parts)
     } else {
         Command::Unknown
     }
@@ -40,6 +49,7 @@ fn main() {
 
         match parse_command(buf.trim()) {
             Command::Exit(exit_code) => std::process::exit(exit_code),
+            Command::Echo(parts) => println!("{}", parts.join(" ")),
             Command::Unknown => println!("{}: command not found", buf.trim()),
         };
 
