@@ -1,5 +1,10 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 enum Command {
     Exit(i32),
@@ -46,7 +51,28 @@ fn parse_command(raw: &str) -> Command {
     }
 }
 
+fn verify_executable(name: &str, env_paths: &Vec<&str>) -> Option<String> {
+    for env_path in env_paths {
+        let path = Path::new(&env_path).join(name);
+        if let Ok(true) = std::fs::exists(&path) {
+            return Some(path.to_str().unwrap().into());
+        }
+    }
+
+    None
+}
+
 fn main() {
+    let mut env_vars: HashMap<String, String> = HashMap::new();
+    for (k, v) in std::env::vars() {
+        env_vars.insert(k, v);
+    }
+
+    let env_path = env_vars
+        .get("PATH")
+        .map(|v| v.split(':').collect())
+        .unwrap_or(vec![]);
+
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -63,7 +89,10 @@ fn main() {
                 if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
                     println!("{} is a shell builtin", what);
                 } else {
-                    println!("{}: not found", what);
+                    match verify_executable(&what, &env_path) {
+                        Some(path) => println!("{} is {}", what, path),
+                        _ => println!("{}: not found", what),
+                    }
                 }
             }
             Command::Unknown => println!("{}: command not found", buf.trim()),
