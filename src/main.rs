@@ -18,6 +18,7 @@ enum Command {
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
 
+#[derive(PartialEq, Eq)]
 enum CommandParseState {
     DropSection,
     WordSection,
@@ -29,6 +30,7 @@ struct ArgParser {
     chars: Vec<char>,
     i: usize,
     buf: String,
+    state: CommandParseState,
 }
 
 impl ArgParser {
@@ -37,6 +39,7 @@ impl ArgParser {
             chars: raw.chars().collect(),
             i: 0,
             buf: String::new(),
+            state: CommandParseState::DropSection,
         }
     }
 
@@ -65,26 +68,31 @@ impl ArgParser {
     }
 
     fn push(&mut self) {
-        self.buf.push(self.current());
+        if self.current() == '\\' && self.state == CommandParseState::WordSection {
+            self.next();
+        }
+
+        if !self.at_end() {
+            self.buf.push(self.current());
+        }
     }
 
     fn parse(mut self) -> Option<(String, Vec<String>)> {
-        let mut state: CommandParseState = CommandParseState::DropSection;
         let mut parts: Vec<String> = vec![];
 
         while !self.at_end() {
             let c = self.current();
 
-            match state {
+            match self.state {
                 CommandParseState::DropSection => {
                     if c.is_whitespace() {
                         // Noop.
                     } else if c == '\'' {
-                        state = CommandParseState::SingleQuoteSection;
+                        self.state = CommandParseState::SingleQuoteSection;
                     } else if c == '"' {
-                        state = CommandParseState::DoubleQuoteSection;
+                        self.state = CommandParseState::DoubleQuoteSection;
                     } else {
-                        state = CommandParseState::WordSection;
+                        self.state = CommandParseState::WordSection;
                         self.push();
                     }
                 }
@@ -95,12 +103,12 @@ impl ArgParser {
                                 self.next();
                             } else if self.peek() == '"' {
                                 self.next();
-                                state = CommandParseState::DoubleQuoteSection;
+                                self.state = CommandParseState::DoubleQuoteSection;
                             } else {
-                                state = CommandParseState::WordSection;
+                                self.state = CommandParseState::WordSection;
                             }
                         } else {
-                            state = CommandParseState::DropSection;
+                            self.state = CommandParseState::DropSection;
                             parts.push(self.buf.clone());
                             self.buf.clear();
                         }
@@ -113,14 +121,14 @@ impl ArgParser {
                         if self.has_n_more(1) && !self.peek().is_whitespace() {
                             if self.peek() == '\'' {
                                 self.next();
-                                state = CommandParseState::SingleQuoteSection;
+                                self.state = CommandParseState::SingleQuoteSection;
                             } else if self.peek() == '"' {
                                 self.next();
                             } else {
-                                state = CommandParseState::WordSection;
+                                self.state = CommandParseState::WordSection;
                             }
                         } else {
-                            state = CommandParseState::DropSection;
+                            self.state = CommandParseState::DropSection;
                             parts.push(self.buf.clone());
                             self.buf.clear();
                         }
@@ -130,13 +138,13 @@ impl ArgParser {
                 }
                 CommandParseState::WordSection => {
                     if c.is_whitespace() {
-                        state = CommandParseState::DropSection;
+                        self.state = CommandParseState::DropSection;
                         parts.push(self.buf.clone());
                         self.buf.clear();
                     } else if c == '\'' {
-                        state = CommandParseState::SingleQuoteSection;
+                        self.state = CommandParseState::SingleQuoteSection;
                     } else if c == '"' {
-                        state = CommandParseState::DoubleQuoteSection;
+                        self.state = CommandParseState::DoubleQuoteSection;
                     } else {
                         self.push();
                     }
@@ -146,7 +154,7 @@ impl ArgParser {
             self.next();
         }
 
-        if let CommandParseState::WordSection = state {
+        if let CommandParseState::WordSection = self.state {
             parts.push(self.buf.clone());
         }
 
