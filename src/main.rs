@@ -18,6 +18,12 @@ enum Command {
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
 
+struct UnidentifiedCommand {
+    name: String,
+    args: Vec<String>,
+    stdout_redirect: Option<String>,
+}
+
 #[derive(PartialEq, Eq)]
 enum CommandParseState {
     DropSection,
@@ -89,7 +95,7 @@ impl ArgParser {
         }
     }
 
-    fn parse(mut self) -> Option<(String, Vec<String>)> {
+    fn parse(mut self) -> Option<UnidentifiedCommand> {
         let mut parts: Vec<String> = vec![];
 
         while !self.at_end() {
@@ -174,48 +180,65 @@ impl ArgParser {
             None
         } else {
             let name = parts.remove(0);
-            Some((name, parts))
+            Some(ArgParser::build_unidentified_command(name, parts))
+        }
+    }
+
+    fn build_unidentified_command(name: String, mut args: Vec<String>) -> UnidentifiedCommand {
+        let mut stdout_redirect = None;
+
+        if args.len() >= 2 {
+            if args[args.len() - 2] == ">" || args[args.len() - 2] == "1>" {
+                stdout_redirect = Some(args.pop().unwrap());
+                args.pop().unwrap();
+            }
+        }
+
+        UnidentifiedCommand {
+            name,
+            args,
+            stdout_redirect,
         }
     }
 }
 
 fn parse_command(raw: &str) -> Command {
-    let (name, args) = match ArgParser::new(raw).parse() {
-        Some(name_args_pair) => name_args_pair,
+    let raw_cmd = match ArgParser::new(raw).parse() {
+        Some(v) => v,
         None => return Command::Invalid,
     };
 
-    if name == "exit" {
-        let exit_code = if args.len() == 1 {
-            if let Ok(v) = i32::from_str_radix(&args[0], 10) {
+    if raw_cmd.name == "exit" {
+        let exit_code = if raw_cmd.args.len() == 1 {
+            if let Ok(v) = i32::from_str_radix(&raw_cmd.args[0], 10) {
                 v
             } else {
                 return Command::Invalid;
             }
-        } else if args.len() > 1 {
+        } else if raw_cmd.args.len() > 1 {
             return Command::Invalid;
         } else {
             0
         };
         Command::Exit(exit_code)
-    } else if name == "echo" {
-        Command::Echo(args)
+    } else if raw_cmd.name == "echo" {
+        Command::Echo(raw_cmd.args)
     } else if raw.starts_with("type") {
-        if args.len() != 1 {
+        if raw_cmd.args.len() != 1 {
             Command::Invalid
         } else {
-            Command::Type(args[0].clone())
+            Command::Type(raw_cmd.args[0].clone())
         }
-    } else if name == "pwd" {
+    } else if raw_cmd.name == "pwd" {
         Command::Pwd
-    } else if name == "cd" {
-        if args.len() != 1 {
+    } else if raw_cmd.name == "cd" {
+        if raw_cmd.args.len() != 1 {
             Command::Invalid
         } else {
-            Command::Cd(args[0].clone())
+            Command::Cd(raw_cmd.args[0].clone())
         }
     } else {
-        Command::Unknown(name, args)
+        Command::Unknown(raw_cmd.name, raw_cmd.args)
     }
 }
 
@@ -273,7 +296,9 @@ fn main() {
 
         match parse_command(buf.trim()) {
             Command::Exit(exit_code) => std::process::exit(exit_code),
-            Command::Echo(parts) => println!("{}", parts.join(" ")),
+            Command::Echo(parts) => {
+                println!("{}", parts.join(" "));
+            }
             Command::Type(what) => {
                 if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
                     println!("{} is a shell builtin", what);
