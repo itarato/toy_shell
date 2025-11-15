@@ -27,7 +27,6 @@ enum CommandParseState {
 
 fn split_command(raw: &str) -> Option<(String, Vec<String>)> {
     let mut state: CommandParseState = CommandParseState::DropSection;
-    let mut section_start: usize = 0;
     let mut parts: Vec<String> = vec![];
 
     let chars = raw.chars().collect::<Vec<_>>();
@@ -99,10 +98,6 @@ fn split_command(raw: &str) -> Option<(String, Vec<String>)> {
                     state = CommandParseState::SingleQuoteSection;
                 } else if c == '"' {
                     state = CommandParseState::DoubleQuoteSection;
-                } else if i == raw.len() - 1 {
-                    buf.push(c);
-                    parts.push(buf.clone());
-                    buf.clear();
                 } else {
                     buf.push(c);
                 }
@@ -110,6 +105,10 @@ fn split_command(raw: &str) -> Option<(String, Vec<String>)> {
         };
 
         i += 1;
+    }
+
+    if let CommandParseState::WordSection = state {
+        parts.push(buf.clone());
     }
 
     if parts.len() < 1 {
