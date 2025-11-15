@@ -70,7 +70,7 @@ impl ArgParser {
     fn push(&mut self) {
         if self.current() == '\\'
             && (self.state == CommandParseState::WordSection
-                || self.state == CommandParseState::DoubleQuoteSection)
+                || self.state == CommandParseState::SingleQuoteSection)
         {
             self.next();
         }
