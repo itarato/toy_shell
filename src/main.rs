@@ -12,57 +12,64 @@ enum Command {
     Type(String),
     Unknown(String, Vec<String>),
     Pwd,
+    Cd(String),
     Invalid,
 }
 
-const SHELL_BUILTIN_COMMANDS: [&'static str; 4] = ["echo", "type", "exit", "pwd"];
+const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
+
+fn split_command(raw: &str) -> Option<(String, Vec<String>)> {
+    let mut parts = raw
+        .split(' ')
+        .filter(|s| s.len() > 0)
+        .map(|s| s.to_owned())
+        .collect::<Vec<String>>();
+
+    if parts.len() < 1 {
+        None
+    } else {
+        let name = parts.remove(0);
+        Some((name, parts))
+    }
+}
 
 fn parse_command(raw: &str) -> Command {
-    if raw.starts_with("exit") {
-        let exit_code = if raw.len() > 4 {
-            let parts = raw.split(' ').collect::<Vec<_>>();
-            if parts.len() != 2 {
-                return Command::Invalid;
+    let (name, args) = match split_command(raw) {
+        Some(name_args_pair) => name_args_pair,
+        None => return Command::Invalid,
+    };
+
+    if name == "exit" {
+        let exit_code = if args.len() == 1 {
+            if let Ok(v) = i32::from_str_radix(&args[0], 10) {
+                v
             } else {
-                if let Ok(v) = i32::from_str_radix(parts[1], 10) {
-                    v
-                } else {
-                    return Command::Invalid;
-                }
+                return Command::Invalid;
             }
+        } else if args.len() > 1 {
+            return Command::Invalid;
         } else {
             0
         };
         Command::Exit(exit_code)
-    } else if raw.starts_with("echo") {
-        let parts = raw
-            .split(' ')
-            .skip(1)
-            .filter(|s| s.len() > 0)
-            .map(|s| s.to_owned())
-            .collect::<Vec<String>>();
-        Command::Echo(parts)
+    } else if name == "echo" {
+        Command::Echo(args)
     } else if raw.starts_with("type") {
-        if raw.len() <= 5 {
+        if args.len() != 1 {
             Command::Invalid
         } else {
-            Command::Type(raw[5..].to_owned())
+            Command::Type(args[0].clone())
         }
-    } else if raw == "pwd" {
+    } else if name == "pwd" {
         Command::Pwd
-    } else {
-        let mut parts = raw
-            .split(' ')
-            .filter(|s| s.len() > 0)
-            .map(|s| s.to_owned())
-            .collect::<Vec<_>>();
-        if parts.len() < 1 {
+    } else if name == "cd" {
+        if args.len() != 1 {
             Command::Invalid
         } else {
-            let name = parts[0].clone();
-            parts.remove(0);
-            Command::Unknown(name, parts)
+            Command::Cd(args[0].clone())
         }
+    } else {
+        Command::Unknown(name, args)
     }
 }
 
@@ -77,6 +84,25 @@ fn verify_executable(name: &str, env_paths: &Vec<PathBuf>) -> Option<String> {
     }
 
     None
+}
+
+fn home_path_expand(path: String) -> String {
+    if path == "~" {
+        std::env::home_dir()
+            .expect("Failed getting home dir")
+            .to_str()
+            .expect("Failed to convert to string")
+            .into()
+    } else if path.starts_with("~/") {
+        std::env::home_dir()
+            .expect("Failed getting home dir")
+            .join(&path[2..])
+            .to_str()
+            .expect("Failed to convert to string")
+            .into()
+    } else {
+        path
+    }
 }
 
 fn main() {
@@ -126,6 +152,10 @@ fn main() {
                     .to_str()
                     .expect("Cannot stringify path")
             ),
+            Command::Cd(path) => match std::env::set_current_dir(home_path_expand(path.clone())) {
+                Ok(_) => {}
+                Err(_) => println!("cd: {}: No such file or directory", path.to_string()),
+            },
             Command::Invalid => println!("{}: command not found", buf.trim()),
         };
 
