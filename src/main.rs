@@ -18,12 +18,99 @@ enum Command {
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
 
+enum CommandParseState {
+    DropSection,
+    WordSection,
+    SingleQuoteSection,
+    DoubleQuoteSection,
+}
+
 fn split_command(raw: &str) -> Option<(String, Vec<String>)> {
-    let mut parts = raw
-        .split(' ')
-        .filter(|s| s.len() > 0)
-        .map(|s| s.to_owned())
-        .collect::<Vec<String>>();
+    let mut state: CommandParseState = CommandParseState::DropSection;
+    let mut section_start: usize = 0;
+    let mut parts: Vec<String> = vec![];
+
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut i = 0;
+    let mut buf = String::new();
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        match state {
+            CommandParseState::DropSection => {
+                if c.is_whitespace() {
+                    // Noop.
+                } else if c == '\'' {
+                    state = CommandParseState::SingleQuoteSection;
+                } else if c == '"' {
+                    state = CommandParseState::DoubleQuoteSection;
+                } else {
+                    state = CommandParseState::WordSection;
+                    buf.push(c);
+                }
+            }
+            CommandParseState::SingleQuoteSection => {
+                if c == '\'' {
+                    if chars.len() > i + 1 && !chars[i + 1].is_whitespace() {
+                        if chars[i + 1] == '\'' {
+                            i += 1;
+                        } else if chars[i + 1] == '"' {
+                            i += 1;
+                            state = CommandParseState::DoubleQuoteSection;
+                        } else {
+                            state = CommandParseState::WordSection;
+                        }
+                    } else {
+                        state = CommandParseState::DropSection;
+                        parts.push(buf.clone());
+                        buf.clear();
+                    }
+                } else {
+                    buf.push(c);
+                }
+            }
+            CommandParseState::DoubleQuoteSection => {
+                if c == '"' {
+                    if chars.len() > i + 1 && !chars[i + 1].is_whitespace() {
+                        if chars[i + 1] == '\'' {
+                            i += 1;
+                            state = CommandParseState::SingleQuoteSection;
+                        } else if chars[i + 1] == '"' {
+                            i += 1;
+                        } else {
+                            state = CommandParseState::WordSection;
+                        }
+                    } else {
+                        state = CommandParseState::DropSection;
+                        parts.push(buf.clone());
+                        buf.clear();
+                    }
+                } else {
+                    buf.push(c);
+                }
+            }
+            CommandParseState::WordSection => {
+                if c.is_whitespace() {
+                    state = CommandParseState::DropSection;
+                    parts.push(buf.clone());
+                    buf.clear();
+                } else if c == '\'' {
+                    state = CommandParseState::SingleQuoteSection;
+                } else if c == '"' {
+                    state = CommandParseState::DoubleQuoteSection;
+                } else if i == raw.len() - 1 {
+                    buf.push(c);
+                    parts.push(buf.clone());
+                    buf.clear();
+                } else {
+                    buf.push(c);
+                }
+            }
+        };
+
+        i += 1;
+    }
 
     if parts.len() < 1 {
         None
