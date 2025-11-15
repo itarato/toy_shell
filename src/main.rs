@@ -68,11 +68,20 @@ impl ArgParser {
     }
 
     fn push(&mut self) {
-        if self.current() == '\\'
-            && (self.state == CommandParseState::WordSection
-                || self.state == CommandParseState::SingleQuoteSection)
-        {
-            self.next();
+        if self.current() == '\\' {
+            if self.state == CommandParseState::WordSection {
+                self.next();
+            } else if self.state == CommandParseState::DoubleQuoteSection {
+                if self.has_n_more(1) {
+                    if "\"$`\\\n".contains(self.peek()) {
+                        self.next();
+                    } else {
+                        // Leave backslash.
+                    }
+                }
+            } else if self.state == CommandParseState::SingleQuoteSection {
+                // Do nothing.
+            }
         }
 
         if !self.at_end() {
