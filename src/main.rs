@@ -3,10 +3,27 @@ use is_executable::IsExecutable;
 use std::io::{self, Write};
 use std::{
     collections::HashMap,
+    fs::File,
     path::{Path, PathBuf},
 };
 
-type MaybeRedirect = Option<String>;
+//                           Path    Append?
+struct Redirect {
+    filename: String,
+    is_append: bool,
+}
+
+impl Redirect {
+    fn file(&self) -> io::Result<File> {
+        std::fs::File::options()
+            .write(true)
+            .create(true)
+            .append(self.is_append)
+            .open(&self.filename)
+    }
+}
+
+type MaybeRedirect = Option<Redirect>;
 
 enum Command {
     Exit(i32),
@@ -214,10 +231,28 @@ impl ArgParser {
         let mut i = 0usize;
         while i + 1 < args.len() {
             if args[i] == ">" || args[i] == "1>" {
-                stdout_redirect = Some(args.remove(i + 1));
+                stdout_redirect = Some(Redirect {
+                    filename: args.remove(i + 1),
+                    is_append: false,
+                });
                 args.remove(i);
             } else if args[i] == "2>" {
-                stderr_redirect = Some(args.remove(i + 1));
+                stderr_redirect = Some(Redirect {
+                    filename: args.remove(i + 1),
+                    is_append: false,
+                });
+                args.remove(i);
+            } else if args[i] == ">>" || args[i] == "1>>" {
+                stdout_redirect = Some(Redirect {
+                    filename: args.remove(i + 1),
+                    is_append: true,
+                });
+                args.remove(i);
+            } else if args[i] == "2>>" {
+                stderr_redirect = Some(Redirect {
+                    filename: args.remove(i + 1),
+                    is_append: true,
+                });
                 args.remove(i);
             } else {
                 i += 1;
@@ -326,8 +361,8 @@ fn home_path_expand(path: String) -> String {
 }
 
 fn output(to_stdout: String, stdout_redirect: MaybeRedirect) {
-    if let Some(redirect_file) = stdout_redirect {
-        if let Ok(mut f) = std::fs::File::create(&redirect_file) {
+    if let Some(redirect) = stdout_redirect {
+        if let Ok(mut f) = redirect.file() {
             if !to_stdout.is_empty() {
                 f.write_all(to_stdout.as_bytes()).unwrap();
             }
@@ -342,8 +377,8 @@ fn output(to_stdout: String, stdout_redirect: MaybeRedirect) {
 }
 
 fn output_error(to_stderr: String, stderr_redirect: MaybeRedirect) {
-    if let Some(redirect_file) = stderr_redirect {
-        if let Ok(mut f) = std::fs::File::create(&redirect_file) {
+    if let Some(redirect) = stderr_redirect {
+        if let Ok(mut f) = redirect.file() {
             if !to_stderr.is_empty() {
                 f.write_all(to_stderr.as_bytes()).unwrap();
             }
@@ -357,14 +392,14 @@ fn output_error(to_stderr: String, stderr_redirect: MaybeRedirect) {
     }
 }
 
-fn verify_redirect_exist(redirect: &MaybeRedirect, original_cmd: &str) -> bool {
-    if let Some(redirect_file) = redirect {
-        if let Ok(_) = std::fs::File::create(&redirect_file) {
+fn verify_redirect_exist(maybe_redirect: &MaybeRedirect, original_cmd: &str) -> bool {
+    if let Some(redirect) = maybe_redirect {
+        if let Ok(_) = redirect.file() {
             true
         } else {
             eprintln!(
                 "{}: {}: No such file or directory",
-                original_cmd, redirect_file
+                original_cmd, redirect.filename
             );
             false
         }
