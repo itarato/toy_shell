@@ -35,6 +35,7 @@ impl Command {
 struct CommandWithContext {
     cmd: Command,
     stdout_redirect: MaybeRedirect,
+    stderr_redirect: MaybeRedirect,
 }
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
@@ -43,6 +44,7 @@ struct UnidentifiedCommand {
     name: String,
     args: Vec<String>,
     stdout_redirect: MaybeRedirect,
+    stderr_redirect: MaybeRedirect,
 }
 
 #[derive(PartialEq, Eq)]
@@ -207,11 +209,18 @@ impl ArgParser {
 
     fn build_unidentified_command(name: String, mut args: Vec<String>) -> UnidentifiedCommand {
         let mut stdout_redirect = None;
+        let mut stderr_redirect = None;
 
-        if args.len() >= 2 {
-            if args[args.len() - 2] == ">" || args[args.len() - 2] == "1>" {
-                stdout_redirect = Some(args.pop().unwrap());
-                args.pop().unwrap();
+        let mut i = 0usize;
+        while i + 1 < args.len() {
+            if args[i] == ">" || args[i] == "1>" {
+                stdout_redirect = Some(args.remove(i + 1));
+                args.remove(i);
+            } else if args[i] == "2>" {
+                stderr_redirect = Some(args.remove(i + 1));
+                args.remove(i);
+            } else {
+                i += 1;
             }
         }
 
@@ -219,6 +228,7 @@ impl ArgParser {
             name,
             args,
             stdout_redirect,
+            stderr_redirect,
         }
     }
 }
@@ -230,6 +240,7 @@ fn parse_command(raw: &str) -> CommandWithContext {
             return CommandWithContext {
                 cmd: Command::Invalid,
                 stdout_redirect: None,
+                stderr_redirect: None,
             }
         }
     };
@@ -242,12 +253,14 @@ fn parse_command(raw: &str) -> CommandWithContext {
                 return CommandWithContext {
                     cmd: Command::Invalid,
                     stdout_redirect: None,
+                    stderr_redirect: None,
                 };
             }
         } else if raw_cmd.args.len() > 1 {
             return CommandWithContext {
                 cmd: Command::Invalid,
                 stdout_redirect: None,
+                stderr_redirect: None,
             };
         } else {
             0
@@ -276,6 +289,7 @@ fn parse_command(raw: &str) -> CommandWithContext {
     CommandWithContext {
         cmd,
         stdout_redirect: raw_cmd.stdout_redirect,
+        stderr_redirect: raw_cmd.stderr_redirect,
     }
 }
 
@@ -312,6 +326,21 @@ fn home_path_expand(path: String) -> String {
 }
 
 fn output(to_stdout: String, stdout_redirect: MaybeRedirect, original_cmd: &str) {
+    if let Some(redirect_file) = stdout_redirect {
+        if let Ok(mut f) = std::fs::File::create(&redirect_file) {
+            f.write_all(to_stdout.as_bytes()).unwrap();
+        } else {
+            println!(
+                "{}: {}: No such file or directory",
+                original_cmd, redirect_file
+            );
+        }
+    } else {
+        println!("{}", to_stdout);
+    }
+}
+
+fn output_error(to_stdout: String, stdout_redirect: MaybeRedirect, original_cmd: &str) {
     if let Some(redirect_file) = stdout_redirect {
         if let Ok(mut f) = std::fs::File::create(&redirect_file) {
             f.write_all(to_stdout.as_bytes()).unwrap();
@@ -381,18 +410,24 @@ fn main() {
             }
             Command::Unknown(name, args) => {
                 if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
-                    output(
-                        String::from_utf8(process_output.stdout)
-                            .unwrap()
-                            .trim()
-                            .into(),
-                        cmd_with_ctx.stdout_redirect,
-                        &orig_cmd_name,
-                    );
+                    if !process_output.stdout.is_empty() {
+                        output(
+                            String::from_utf8(process_output.stdout)
+                                .unwrap()
+                                .trim()
+                                .into(),
+                            cmd_with_ctx.stdout_redirect,
+                            &orig_cmd_name,
+                        );
+                    }
                     if !process_output.stderr.is_empty() {
-                        eprintln!(
-                            "{}",
-                            String::from_utf8(process_output.stderr).unwrap().trim()
+                        output_error(
+                            String::from_utf8(process_output.stderr)
+                                .unwrap()
+                                .trim()
+                                .into(),
+                            cmd_with_ctx.stderr_redirect,
+                            &orig_cmd_name,
                         );
                     }
                 } else {
