@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+type MaybeRedirect = Option<String>;
+
 enum Command {
     Exit(i32),
     Echo(Vec<String>),
@@ -16,12 +18,31 @@ enum Command {
     Invalid,
 }
 
+impl Command {
+    fn name(&self) -> String {
+        match self {
+            Command::Exit(_) => "exit".into(),
+            Command::Echo(_) => "echo".into(),
+            Command::Type(_) => "type".into(),
+            Command::Unknown(name, _) => name.clone(),
+            Command::Pwd => "pwd".into(),
+            Command::Cd(_) => "cd".into(),
+            Command::Invalid => unimplemented!(),
+        }
+    }
+}
+
+struct CommandWithContext {
+    cmd: Command,
+    stdout_redirect: MaybeRedirect,
+}
+
 const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
 
 struct UnidentifiedCommand {
     name: String,
     args: Vec<String>,
-    stdout_redirect: Option<String>,
+    stdout_redirect: MaybeRedirect,
 }
 
 #[derive(PartialEq, Eq)]
@@ -202,21 +223,32 @@ impl ArgParser {
     }
 }
 
-fn parse_command(raw: &str) -> Command {
+fn parse_command(raw: &str) -> CommandWithContext {
     let raw_cmd = match ArgParser::new(raw).parse() {
         Some(v) => v,
-        None => return Command::Invalid,
+        None => {
+            return CommandWithContext {
+                cmd: Command::Invalid,
+                stdout_redirect: None,
+            }
+        }
     };
 
-    if raw_cmd.name == "exit" {
+    let cmd = if raw_cmd.name == "exit" {
         let exit_code = if raw_cmd.args.len() == 1 {
             if let Ok(v) = i32::from_str_radix(&raw_cmd.args[0], 10) {
                 v
             } else {
-                return Command::Invalid;
+                return CommandWithContext {
+                    cmd: Command::Invalid,
+                    stdout_redirect: None,
+                };
             }
         } else if raw_cmd.args.len() > 1 {
-            return Command::Invalid;
+            return CommandWithContext {
+                cmd: Command::Invalid,
+                stdout_redirect: None,
+            };
         } else {
             0
         };
@@ -239,6 +271,11 @@ fn parse_command(raw: &str) -> Command {
         }
     } else {
         Command::Unknown(raw_cmd.name, raw_cmd.args)
+    };
+
+    CommandWithContext {
+        cmd,
+        stdout_redirect: raw_cmd.stdout_redirect,
     }
 }
 
@@ -274,6 +311,21 @@ fn home_path_expand(path: String) -> String {
     }
 }
 
+fn output(to_stdout: String, stdout_redirect: MaybeRedirect, original_cmd: &str) {
+    if let Some(redirect_file) = stdout_redirect {
+        if let Ok(mut f) = std::fs::File::create(&redirect_file) {
+            f.write_all(to_stdout.as_bytes()).unwrap();
+        } else {
+            println!(
+                "{}: {}: No such file or directory",
+                original_cmd, redirect_file
+            );
+        }
+    } else {
+        println!("{}", to_stdout);
+    }
+}
+
 fn main() {
     let mut env_vars: HashMap<String, String> = HashMap::new();
     for (k, v) in std::env::vars() {
@@ -294,26 +346,52 @@ fn main() {
             .read_line(&mut buf)
             .expect("Failed reading STDIN");
 
-        match parse_command(buf.trim()) {
+        let cmd_with_ctx = parse_command(buf.trim());
+        let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
+        match cmd_with_ctx.cmd {
             Command::Exit(exit_code) => std::process::exit(exit_code),
             Command::Echo(parts) => {
-                println!("{}", parts.join(" "));
+                output(
+                    format!("{}", parts.join(" ")),
+                    cmd_with_ctx.stdout_redirect,
+                    &orig_cmd_name,
+                );
             }
             Command::Type(what) => {
                 if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
-                    println!("{} is a shell builtin", what);
+                    output(
+                        format!("{} is a shell builtin", what),
+                        cmd_with_ctx.stdout_redirect,
+                        &orig_cmd_name,
+                    );
                 } else {
                     match verify_executable(&what, &env_path) {
-                        Some(path) => println!("{} is {}", what, path),
-                        _ => println!("{}: not found", what),
+                        Some(path) => output(
+                            format!("{} is {}", what, path),
+                            cmd_with_ctx.stdout_redirect,
+                            &orig_cmd_name,
+                        ),
+                        _ => output(
+                            format!("{}: not found", what),
+                            cmd_with_ctx.stdout_redirect,
+                            &orig_cmd_name,
+                        ),
                     }
                 }
             }
             Command::Unknown(name, args) => {
-                if let Ok(mut child) = std::process::Command::new(&name).args(&args).spawn() {
-                    child.wait().expect("Failed waiting for children");
+                if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
+                    output(
+                        String::from_utf8(process_output.stdout).unwrap(),
+                        cmd_with_ctx.stdout_redirect,
+                        &orig_cmd_name,
+                    );
                 } else {
-                    println!("{}: command not found", name);
+                    output(
+                        format!("{}: command not found", name),
+                        cmd_with_ctx.stdout_redirect,
+                        &orig_cmd_name,
+                    );
                 }
             }
             Command::Pwd => println!(
@@ -325,9 +403,17 @@ fn main() {
             ),
             Command::Cd(path) => match std::env::set_current_dir(home_path_expand(path.clone())) {
                 Ok(_) => {}
-                Err(_) => println!("cd: {}: No such file or directory", path.to_string()),
+                Err(_) => output(
+                    format!("cd: {}: No such file or directory", path.to_string()),
+                    cmd_with_ctx.stdout_redirect,
+                    &orig_cmd_name,
+                ),
             },
-            Command::Invalid => println!("{}: command not found", buf.trim()),
+            Command::Invalid => output(
+                format!("{}: command not found", buf.trim()),
+                cmd_with_ctx.stdout_redirect,
+                &orig_cmd_name,
+            ),
         };
 
         io::stdout().flush().unwrap();
