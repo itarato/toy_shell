@@ -382,6 +382,7 @@ fn output_error(to_stderr: String, stderr_redirect: MaybeRedirect) {
         if let Ok(mut f) = redirect.file() {
             if !to_stderr.is_empty() {
                 f.write_all(to_stderr.as_bytes()).unwrap();
+                f.write_all(b"\n").unwrap();
             }
         } else {
             panic!("File was expected to exist");
