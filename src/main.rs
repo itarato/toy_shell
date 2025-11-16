@@ -389,10 +389,12 @@ fn main() {
                         cmd_with_ctx.stdout_redirect,
                         &orig_cmd_name,
                     );
-                    eprintln!(
-                        "{}",
-                        String::from_utf8(process_output.stderr).unwrap().trim()
-                    );
+                    if !process_output.stderr.is_empty() {
+                        eprintln!(
+                            "{}",
+                            String::from_utf8(process_output.stderr).unwrap().trim()
+                        );
+                    }
                 } else {
                     output(
                         format!("{}: command not found", name),
