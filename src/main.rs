@@ -325,33 +325,51 @@ fn home_path_expand(path: String) -> String {
     }
 }
 
-fn output(to_stdout: String, stdout_redirect: MaybeRedirect, original_cmd: &str) {
+fn output(to_stdout: String, stdout_redirect: MaybeRedirect) {
     if let Some(redirect_file) = stdout_redirect {
         if let Ok(mut f) = std::fs::File::create(&redirect_file) {
-            f.write_all(to_stdout.as_bytes()).unwrap();
+            if !to_stdout.is_empty() {
+                f.write_all(to_stdout.as_bytes()).unwrap();
+            }
         } else {
-            println!(
-                "{}: {}: No such file or directory",
-                original_cmd, redirect_file
-            );
+            panic!("File was expected to exist");
         }
     } else {
-        println!("{}", to_stdout);
+        if !to_stdout.is_empty() {
+            println!("{}", to_stdout);
+        }
     }
 }
 
-fn output_error(to_stdout: String, stdout_redirect: MaybeRedirect, original_cmd: &str) {
-    if let Some(redirect_file) = stdout_redirect {
+fn output_error(to_stderr: String, stderr_redirect: MaybeRedirect) {
+    if let Some(redirect_file) = stderr_redirect {
         if let Ok(mut f) = std::fs::File::create(&redirect_file) {
-            f.write_all(to_stdout.as_bytes()).unwrap();
+            if !to_stderr.is_empty() {
+                f.write_all(to_stderr.as_bytes()).unwrap();
+            }
         } else {
-            println!(
+            panic!("File was expected to exist");
+        }
+    } else {
+        if !to_stderr.is_empty() {
+            eprintln!("{}", to_stderr);
+        }
+    }
+}
+
+fn verify_redirect_exist(redirect: &MaybeRedirect, original_cmd: &str) -> bool {
+    if let Some(redirect_file) = redirect {
+        if let Ok(_) = std::fs::File::create(&redirect_file) {
+            true
+        } else {
+            eprintln!(
                 "{}: {}: No such file or directory",
                 original_cmd, redirect_file
             );
+            false
         }
     } else {
-        println!("{}", to_stdout);
+        true
     }
 }
 
@@ -377,86 +395,80 @@ fn main() {
 
         let cmd_with_ctx = parse_command(buf.trim());
         let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
+
+        if !verify_redirect_exist(&cmd_with_ctx.stdout_redirect, &orig_cmd_name) {
+            continue;
+        }
+        if !verify_redirect_exist(&cmd_with_ctx.stderr_redirect, &orig_cmd_name) {
+            continue;
+        }
+
         match cmd_with_ctx.cmd {
             Command::Exit(exit_code) => std::process::exit(exit_code),
             Command::Echo(parts) => {
-                output(
-                    format!("{}", parts.join(" ")),
-                    cmd_with_ctx.stdout_redirect,
-                    &orig_cmd_name,
-                );
+                output(format!("{}", parts.join(" ")), cmd_with_ctx.stdout_redirect);
+                output_error(String::new(), cmd_with_ctx.stderr_redirect);
             }
             Command::Type(what) => {
                 if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
                     output(
                         format!("{} is a shell builtin", what),
                         cmd_with_ctx.stdout_redirect,
-                        &orig_cmd_name,
                     );
                 } else {
                     match verify_executable(&what, &env_path) {
                         Some(path) => output(
                             format!("{} is {}", what, path),
                             cmd_with_ctx.stdout_redirect,
-                            &orig_cmd_name,
                         ),
-                        _ => output(
-                            format!("{}: not found", what),
-                            cmd_with_ctx.stdout_redirect,
-                            &orig_cmd_name,
-                        ),
+                        _ => output(format!("{}: not found", what), cmd_with_ctx.stdout_redirect),
                     }
                 }
             }
             Command::Unknown(name, args) => {
                 if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
-                    if !process_output.stdout.is_empty() {
-                        output(
-                            String::from_utf8(process_output.stdout)
-                                .unwrap()
-                                .trim()
-                                .into(),
-                            cmd_with_ctx.stdout_redirect,
-                            &orig_cmd_name,
-                        );
-                    }
-                    if !process_output.stderr.is_empty() {
-                        output_error(
-                            String::from_utf8(process_output.stderr)
-                                .unwrap()
-                                .trim()
-                                .into(),
-                            cmd_with_ctx.stderr_redirect,
-                            &orig_cmd_name,
-                        );
-                    }
+                    output(
+                        String::from_utf8(process_output.stdout)
+                            .unwrap()
+                            .trim()
+                            .into(),
+                        cmd_with_ctx.stdout_redirect,
+                    );
+
+                    output_error(
+                        String::from_utf8(process_output.stderr)
+                            .unwrap()
+                            .trim()
+                            .into(),
+                        cmd_with_ctx.stderr_redirect,
+                    );
                 } else {
                     output(
                         format!("{}: command not found", name),
                         cmd_with_ctx.stdout_redirect,
-                        &orig_cmd_name,
                     );
                 }
             }
-            Command::Pwd => println!(
-                "{}",
-                std::env::current_dir()
-                    .expect("Cannot retrieve current work dir")
-                    .to_str()
-                    .expect("Cannot stringify path")
+            Command::Pwd => output(
+                format!(
+                    "{}",
+                    std::env::current_dir()
+                        .expect("Cannot retrieve current work dir")
+                        .to_str()
+                        .expect("Cannot stringify path")
+                ),
+                cmd_with_ctx.stdout_redirect,
             ),
             Command::Cd(path) => match std::env::set_current_dir(home_path_expand(path.clone())) {
                 Ok(_) => {}
                 Err(_) => output(
                     format!("cd: {}: No such file or directory", path.to_string()),
                     cmd_with_ctx.stdout_redirect,
-                    &orig_cmd_name,
                 ),
             },
             Command::Invalid => output(
                 format!("{}: command not found", buf.trim()),
                 cmd_with_ctx.stdout_redirect,
-                &orig_cmd_name,
             ),
         };
 
