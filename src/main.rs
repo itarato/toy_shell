@@ -382,7 +382,10 @@ fn main() {
             Command::Unknown(name, args) => {
                 if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
                     output(
-                        String::from_utf8(process_output.stdout).unwrap(),
+                        String::from_utf8(process_output.stdout)
+                            .unwrap()
+                            .trim()
+                            .into(),
                         cmd_with_ctx.stdout_redirect,
                         &orig_cmd_name,
                     );
