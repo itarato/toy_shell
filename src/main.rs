@@ -365,6 +365,7 @@ fn output(to_stdout: String, stdout_redirect: MaybeRedirect) {
         if let Ok(mut f) = redirect.file() {
             if !to_stdout.is_empty() {
                 f.write_all(to_stdout.as_bytes()).unwrap();
+                f.write_all(b"\n").unwrap();
             }
         } else {
             panic!("File was expected to exist");
