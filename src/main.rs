@@ -1,53 +1,23 @@
 use is_executable::IsExecutable;
+use rustyline::{
+    hint::{Hint, Hinter},
+    history::DefaultHistory,
+    Completer, Editor, Helper, Highlighter, Validator,
+};
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::{
     collections::HashMap,
-    fs::File,
     path::{Path, PathBuf},
 };
 
-//                           Path    Append?
-struct Redirect {
-    filename: String,
-    is_append: bool,
-}
+mod arg_parser;
+mod command;
+mod redirect;
 
-impl Redirect {
-    fn file(&self) -> io::Result<File> {
-        std::fs::File::options()
-            .write(true)
-            .create(true)
-            .append(self.is_append)
-            .open(&self.filename)
-    }
-}
-
-type MaybeRedirect = Option<Redirect>;
-
-enum Command {
-    Exit(i32),
-    Echo(Vec<String>),
-    Type(String),
-    Unknown(String, Vec<String>),
-    Pwd,
-    Cd(String),
-    Invalid,
-}
-
-impl Command {
-    fn name(&self) -> String {
-        match self {
-            Command::Exit(_) => "exit".into(),
-            Command::Echo(_) => "echo".into(),
-            Command::Type(_) => "type".into(),
-            Command::Unknown(name, _) => name.clone(),
-            Command::Pwd => "pwd".into(),
-            Command::Cd(_) => "cd".into(),
-            Command::Invalid => unimplemented!(),
-        }
-    }
-}
+use arg_parser::*;
+use command::*;
+use redirect::*;
 
 struct CommandWithContext {
     cmd: Command,
@@ -56,217 +26,6 @@ struct CommandWithContext {
 }
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
-
-struct UnidentifiedCommand {
-    name: String,
-    args: Vec<String>,
-    stdout_redirect: MaybeRedirect,
-    stderr_redirect: MaybeRedirect,
-}
-
-#[derive(PartialEq, Eq)]
-enum CommandParseState {
-    DropSection,
-    WordSection,
-    SingleQuoteSection,
-    DoubleQuoteSection,
-}
-
-struct ArgParser {
-    chars: Vec<char>,
-    i: usize,
-    buf: String,
-    state: CommandParseState,
-}
-
-impl ArgParser {
-    fn new(raw: &str) -> Self {
-        Self {
-            chars: raw.chars().collect(),
-            i: 0,
-            buf: String::new(),
-            state: CommandParseState::DropSection,
-        }
-    }
-
-    fn at_end(&self) -> bool {
-        self.i >= self.chars.len()
-    }
-
-    fn current(&self) -> char {
-        self.chars[self.i]
-    }
-
-    fn has_n_more(&self, n: usize) -> bool {
-        self.chars.len() > self.i + n
-    }
-
-    fn peek(&self) -> char {
-        self.peekn(1)
-    }
-
-    fn peekn(&self, n: usize) -> char {
-        self.chars[self.i + n]
-    }
-
-    fn next(&mut self) {
-        self.i += 1;
-    }
-
-    fn push(&mut self) {
-        if self.current() == '\\' {
-            if self.state == CommandParseState::WordSection {
-                self.next();
-            } else if self.state == CommandParseState::DoubleQuoteSection {
-                if self.has_n_more(1) {
-                    if "\"$`\\\n".contains(self.peek()) {
-                        self.next();
-                    } else {
-                        // Leave backslash.
-                    }
-                }
-            } else if self.state == CommandParseState::SingleQuoteSection {
-                // Do nothing.
-            }
-        }
-
-        if !self.at_end() {
-            self.buf.push(self.current());
-        }
-    }
-
-    fn parse(mut self) -> Option<UnidentifiedCommand> {
-        let mut parts: Vec<String> = vec![];
-
-        while !self.at_end() {
-            let c = self.current();
-
-            match self.state {
-                CommandParseState::DropSection => {
-                    if c.is_whitespace() {
-                        // Noop.
-                    } else if c == '\'' {
-                        self.state = CommandParseState::SingleQuoteSection;
-                    } else if c == '"' {
-                        self.state = CommandParseState::DoubleQuoteSection;
-                    } else {
-                        self.state = CommandParseState::WordSection;
-                        self.push();
-                    }
-                }
-                CommandParseState::SingleQuoteSection => {
-                    if c == '\'' {
-                        if self.has_n_more(1) && !self.peek().is_whitespace() {
-                            if self.peek() == '\'' {
-                                self.next();
-                            } else if self.peek() == '"' {
-                                self.next();
-                                self.state = CommandParseState::DoubleQuoteSection;
-                            } else {
-                                self.state = CommandParseState::WordSection;
-                            }
-                        } else {
-                            self.state = CommandParseState::DropSection;
-                            parts.push(self.buf.clone());
-                            self.buf.clear();
-                        }
-                    } else {
-                        self.push();
-                    }
-                }
-                CommandParseState::DoubleQuoteSection => {
-                    if c == '"' {
-                        if self.has_n_more(1) && !self.peek().is_whitespace() {
-                            if self.peek() == '\'' {
-                                self.next();
-                                self.state = CommandParseState::SingleQuoteSection;
-                            } else if self.peek() == '"' {
-                                self.next();
-                            } else {
-                                self.state = CommandParseState::WordSection;
-                            }
-                        } else {
-                            self.state = CommandParseState::DropSection;
-                            parts.push(self.buf.clone());
-                            self.buf.clear();
-                        }
-                    } else {
-                        self.push();
-                    }
-                }
-                CommandParseState::WordSection => {
-                    if c.is_whitespace() {
-                        self.state = CommandParseState::DropSection;
-                        parts.push(self.buf.clone());
-                        self.buf.clear();
-                    } else if c == '\'' {
-                        self.state = CommandParseState::SingleQuoteSection;
-                    } else if c == '"' {
-                        self.state = CommandParseState::DoubleQuoteSection;
-                    } else {
-                        self.push();
-                    }
-                }
-            };
-
-            self.next();
-        }
-
-        if let CommandParseState::WordSection = self.state {
-            parts.push(self.buf.clone());
-        }
-
-        if parts.len() < 1 {
-            None
-        } else {
-            let name = parts.remove(0);
-            Some(ArgParser::build_unidentified_command(name, parts))
-        }
-    }
-
-    fn build_unidentified_command(name: String, mut args: Vec<String>) -> UnidentifiedCommand {
-        let mut stdout_redirect = None;
-        let mut stderr_redirect = None;
-
-        let mut i = 0usize;
-        while i + 1 < args.len() {
-            if args[i] == ">" || args[i] == "1>" {
-                stdout_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: false,
-                });
-                args.remove(i);
-            } else if args[i] == "2>" {
-                stderr_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: false,
-                });
-                args.remove(i);
-            } else if args[i] == ">>" || args[i] == "1>>" {
-                stdout_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: true,
-                });
-                args.remove(i);
-            } else if args[i] == "2>>" {
-                stderr_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: true,
-                });
-                args.remove(i);
-            } else {
-                i += 1;
-            }
-        }
-
-        UnidentifiedCommand {
-            name,
-            args,
-            stdout_redirect,
-            stderr_redirect,
-        }
-    }
-}
 
 fn parse_command(raw: &str) -> CommandWithContext {
     let raw_cmd = match ArgParser::new(raw).parse() {
@@ -317,6 +76,8 @@ fn parse_command(raw: &str) -> CommandWithContext {
         } else {
             Command::Cd(raw_cmd.args[0].clone())
         }
+    } else if raw_cmd.name.is_empty() {
+        Command::Empty
     } else {
         Command::Unknown(raw_cmd.name, raw_cmd.args)
     };
@@ -410,6 +171,51 @@ fn verify_redirect_exist(maybe_redirect: &MaybeRedirect, original_cmd: &str) -> 
     }
 }
 
+struct CustomRLHint {
+    word: String,
+}
+
+impl Hint for CustomRLHint {
+    fn completion(&self) -> Option<&str> {
+        Some(&self.word)
+    }
+
+    fn display(&self) -> &str {
+        &self.word
+    }
+}
+
+#[derive(Helper, Validator, Highlighter, Completer)]
+struct CustomRLHinter {}
+
+impl Hinter for CustomRLHinter {
+    type Hint = CustomRLHint;
+
+    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
+        if line.is_empty() {
+            return None;
+        }
+
+        if "echo".starts_with(line) {
+            Some(CustomRLHint {
+                word: "echo"[line.len()..].into(),
+            })
+        } else if "exit".starts_with(line) {
+            Some(CustomRLHint {
+                word: "exit"[line.len()..].into(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl CustomRLHinter {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
 fn main() {
     let mut env_vars: HashMap<String, String> = HashMap::new();
     for (k, v) in std::env::vars() {
@@ -421,14 +227,22 @@ fn main() {
         .map(|v| std::env::split_paths(v).collect())
         .unwrap_or(vec![]);
 
-    loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
+    let rl_hinter = CustomRLHinter::new();
+    let mut rl: Editor<CustomRLHinter, DefaultHistory> = Editor::new().unwrap();
+    rl.set_helper(Some(rl_hinter));
+    let _ = rl.load_history("history.txt");
 
-        let mut buf = String::new();
-        io::stdin()
-            .read_line(&mut buf)
-            .expect("Failed reading STDIN");
+    loop {
+        let buf = match rl.readline("$ ") {
+            Ok(s) => {
+                rl.add_history_entry(&s).unwrap();
+                s
+            }
+            Err(err) => {
+                dbg!(err);
+                continue;
+            }
+        };
 
         let cmd_with_ctx = parse_command(buf.trim());
         let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
@@ -441,7 +255,10 @@ fn main() {
         }
 
         match cmd_with_ctx.cmd {
-            Command::Exit(exit_code) => std::process::exit(exit_code),
+            Command::Exit(exit_code) => {
+                let _ = rl.save_history("history.txt");
+                std::process::exit(exit_code);
+            }
             Command::Echo(parts) => {
                 output(format!("{}", parts.join(" ")), cmd_with_ctx.stdout_redirect);
                 output_error(String::new(), cmd_with_ctx.stderr_redirect);
@@ -503,6 +320,7 @@ fn main() {
                     cmd_with_ctx.stdout_redirect,
                 ),
             },
+            Command::Empty => {}
             Command::Invalid => output(
                 format!("{}: command not found", buf.trim()),
                 cmd_with_ctx.stdout_redirect,
