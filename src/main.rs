@@ -1,8 +1,11 @@
 use is_executable::IsExecutable;
 use rustyline::{
+    completion::{Candidate, Completer},
+    config::Configurer,
     hint::{Hint, Hinter},
     history::DefaultHistory,
-    Completer, Editor, Helper, Highlighter, Validator,
+    Cmd, Completer, EditMode, Editor, Helper, Highlighter, Hinter, KeyCode, KeyEvent, Modifiers,
+    Validator,
 };
 #[allow(unused_imports)]
 use std::io::{self, Write};
@@ -171,46 +174,47 @@ fn verify_redirect_exist(maybe_redirect: &MaybeRedirect, original_cmd: &str) -> 
     }
 }
 
-struct CustomRLHint {
+struct CustomRLCandidate {
     word: String,
 }
 
-impl Hint for CustomRLHint {
-    fn completion(&self) -> Option<&str> {
-        Some(&self.word)
+impl Candidate for CustomRLCandidate {
+    fn display(&self) -> &str {
+        &self.word
     }
 
-    fn display(&self) -> &str {
+    fn replacement(&self) -> &str {
         &self.word
     }
 }
 
-#[derive(Helper, Validator, Highlighter, Completer)]
-struct CustomRLHinter {}
+#[derive(Helper, Validator, Highlighter, Hinter)]
+struct CustomRLCompleter {}
 
-impl Hinter for CustomRLHinter {
-    type Hint = CustomRLHint;
+impl Completer for CustomRLCompleter {
+    type Candidate = CustomRLCandidate;
 
-    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
+    fn complete(
+        &self, // FIXME should be `&mut self`
+        line: &str,
+        pos: usize,
+        ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         if line.is_empty() {
-            return None;
+            return Ok((pos, vec![]));
         }
 
-        if "echo".starts_with(line) {
-            Some(CustomRLHint {
-                word: "echo"[line.len()..].into(),
-            })
-        } else if "exit".starts_with(line) {
-            Some(CustomRLHint {
-                word: "exit"[line.len()..].into(),
-            })
-        } else {
-            None
+        for cmd in SHELL_BUILTIN_COMMANDS {
+            if cmd.starts_with(line) {
+                return Ok((0, vec![CustomRLCandidate { word: cmd.into() }]));
+            }
         }
+
+        Ok((pos, vec![]))
     }
 }
 
-impl CustomRLHinter {
+impl CustomRLCompleter {
     fn new() -> Self {
         Self {}
     }
@@ -227,9 +231,10 @@ fn main() {
         .map(|v| std::env::split_paths(v).collect())
         .unwrap_or(vec![]);
 
-    let rl_hinter = CustomRLHinter::new();
-    let mut rl: Editor<CustomRLHinter, DefaultHistory> = Editor::new().unwrap();
-    rl.set_helper(Some(rl_hinter));
+    let rl_completer = CustomRLCompleter::new();
+    let mut rl: Editor<CustomRLCompleter, DefaultHistory> = Editor::new().unwrap();
+
+    rl.set_helper(Some(rl_completer));
     let _ = rl.load_history("history.txt");
 
     loop {
