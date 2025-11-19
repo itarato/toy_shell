@@ -200,23 +200,21 @@ impl Completer for CustomRLCompleter {
         pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        if line.is_empty() {
-            return Ok((pos, vec![]));
-        }
+        let mut candidates = vec![];
 
         for name in SHELL_BUILTIN_COMMANDS {
             if name.starts_with(line) {
-                return Ok((0, vec![CustomRLCandidate { word: name.into() }]));
+                candidates.push(CustomRLCandidate { word: name.into() });
             }
         }
 
         for name in &self.env_path_executable_names {
             if name.starts_with(line) {
-                return Ok((0, vec![CustomRLCandidate { word: name.into() }]));
+                candidates.push(CustomRLCandidate { word: name.into() });
             }
         }
 
-        Ok((pos, vec![]))
+        Ok((0, candidates))
     }
 
     fn update(&self, line: &mut LineBuffer, start: usize, elected: &str, cl: &mut Changeset) {
@@ -286,8 +284,8 @@ fn main() {
                 rl.add_history_entry(&s).unwrap();
                 s
             }
-            Err(err) => {
-                dbg!(err);
+            Err(_err) => {
+                // dbg!(err);
                 continue;
             }
         };
