@@ -187,7 +187,9 @@ impl Candidate for CustomRLCandidate {
 }
 
 #[derive(Helper, Validator, Highlighter, Hinter)]
-struct CustomRLCompleter {}
+struct CustomRLCompleter {
+    env_path_executable_names: Vec<String>,
+}
 
 impl Completer for CustomRLCompleter {
     type Candidate = CustomRLCandidate;
@@ -202,9 +204,15 @@ impl Completer for CustomRLCompleter {
             return Ok((pos, vec![]));
         }
 
-        for cmd in SHELL_BUILTIN_COMMANDS {
-            if cmd.starts_with(line) {
-                return Ok((0, vec![CustomRLCandidate { word: cmd.into() }]));
+        for name in SHELL_BUILTIN_COMMANDS {
+            if name.starts_with(line) {
+                return Ok((0, vec![CustomRLCandidate { word: name.into() }]));
+            }
+        }
+
+        for name in &self.env_path_executable_names {
+            if name.starts_with(line) {
+                return Ok((0, vec![CustomRLCandidate { word: name.into() }]));
             }
         }
 
@@ -220,9 +228,39 @@ impl Completer for CustomRLCompleter {
 }
 
 impl CustomRLCompleter {
-    fn new() -> Self {
-        Self {}
+    fn new(env_path_executable_names: Vec<String>) -> Self {
+        Self {
+            env_path_executable_names,
+        }
     }
+}
+
+fn preload_exec_names(env_paths: &Vec<PathBuf>) -> Vec<String> {
+    let mut out = vec![];
+    for path in env_paths {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+
+            if !metadata.is_file() {
+                continue;
+            };
+
+            let filename_os = entry.file_name();
+            let Some(filename) = filename_os.to_str() else {
+                continue;
+            };
+
+            out.push(filename.to_string());
+        }
+    }
+
+    out
 }
 
 fn main() {
@@ -231,12 +269,12 @@ fn main() {
         env_vars.insert(k, v);
     }
 
-    let env_path = env_vars
+    let env_paths = env_vars
         .get("PATH")
         .map(|v| std::env::split_paths(v).collect())
         .unwrap_or(vec![]);
 
-    let rl_completer = CustomRLCompleter::new();
+    let rl_completer = CustomRLCompleter::new(preload_exec_names(&env_paths));
     let mut rl: Editor<CustomRLCompleter, DefaultHistory> = Editor::new().unwrap();
 
     rl.set_helper(Some(rl_completer));
@@ -280,7 +318,7 @@ fn main() {
                         cmd_with_ctx.stdout_redirect,
                     );
                 } else {
-                    match verify_executable(&what, &env_path) {
+                    match verify_executable(&what, &env_paths) {
                         Some(path) => output(
                             format!("{} is {}", what, path),
                             cmd_with_ctx.stdout_redirect,
