@@ -1,11 +1,9 @@
 use is_executable::IsExecutable;
 use rustyline::{
     completion::{Candidate, Completer},
-    config::Configurer,
-    hint::{Hint, Hinter},
     history::DefaultHistory,
-    Cmd, Completer, EditMode, Editor, Helper, Highlighter, Hinter, KeyCode, KeyEvent, Modifiers,
-    Validator,
+    line_buffer::LineBuffer,
+    Changeset, Editor, Helper, Highlighter, Hinter, Validator,
 };
 #[allow(unused_imports)]
 use std::io::{self, Write};
@@ -195,10 +193,10 @@ impl Completer for CustomRLCompleter {
     type Candidate = CustomRLCandidate;
 
     fn complete(
-        &self, // FIXME should be `&mut self`
+        &self,
         line: &str,
         pos: usize,
-        ctx: &rustyline::Context<'_>,
+        _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         if line.is_empty() {
             return Ok((pos, vec![]));
@@ -211,6 +209,13 @@ impl Completer for CustomRLCompleter {
         }
 
         Ok((pos, vec![]))
+    }
+
+    fn update(&self, line: &mut LineBuffer, start: usize, elected: &str, cl: &mut Changeset) {
+        let end = line.pos();
+        let mut elected_with_space = elected.to_owned();
+        elected_with_space.push(' ');
+        line.replace(start..end, &elected_with_space, cl);
     }
 }
 
