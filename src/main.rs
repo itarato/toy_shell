@@ -246,7 +246,7 @@ impl Completer for CustomRLCompleter {
                         io::stdout().write(b"\n\r").unwrap();
                         is_first = false;
                     } else {
-                        io::stdout().write_all(b" ").unwrap();
+                        io::stdout().write_all(b"  ").unwrap();
                     }
                     io::stdout().write_all(name.as_bytes()).unwrap();
                 }
@@ -272,6 +272,8 @@ impl CustomRLCompleter {
         for name in SHELL_BUILTIN_COMMANDS.iter().rev() {
             env_path_executable_names.insert(0, name.to_string());
         }
+
+        env_path_executable_names.sort();
 
         Self {
             executable_names: env_path_executable_names,
