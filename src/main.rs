@@ -8,6 +8,7 @@ use rustyline::{
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::{
+    cell::Cell,
     collections::HashMap,
     path::{Path, PathBuf},
 };
@@ -188,7 +189,9 @@ impl Candidate for CustomRLCandidate {
 
 #[derive(Helper, Validator, Highlighter, Hinter)]
 struct CustomRLCompleter {
-    env_path_executable_names: Vec<String>,
+    executable_names: Vec<String>,
+    is_second_update: Cell<bool>,
+    prefix: Cell<String>,
 }
 
 impl Completer for CustomRLCompleter {
@@ -197,27 +200,66 @@ impl Completer for CustomRLCompleter {
     fn complete(
         &self,
         line: &str,
-        pos: usize,
+        _pos: usize,
         _ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
-        let mut candidates = vec![];
+        // Reset memory.
+        self.is_second_update.set(false);
+        self.prefix.set(line.into());
 
         for name in SHELL_BUILTIN_COMMANDS {
             if name.starts_with(line) {
-                candidates.push(CustomRLCandidate { word: name.into() });
+                return Ok((
+                    0,
+                    vec![
+                        CustomRLCandidate { word: name.into() },
+                        CustomRLCandidate { word: name.into() },
+                    ],
+                ));
             }
         }
 
-        for name in &self.env_path_executable_names {
+        for name in &self.executable_names {
             if name.starts_with(line) {
-                candidates.push(CustomRLCandidate { word: name.into() });
+                return Ok((
+                    0,
+                    vec![
+                        CustomRLCandidate { word: name.into() },
+                        CustomRLCandidate { word: name.into() },
+                    ],
+                ));
             }
         }
 
-        Ok((0, candidates))
+        Ok((0, vec![]))
     }
 
     fn update(&self, line: &mut LineBuffer, start: usize, elected: &str, cl: &mut Changeset) {
+        if self.is_second_update.get() {
+            let prefix = self.prefix.take();
+            self.prefix.set(prefix.clone());
+
+            let mut is_first = true;
+            for name in &self.executable_names {
+                if name.starts_with(&prefix) {
+                    if is_first {
+                        io::stdout().write(b"\n\r").unwrap();
+                        is_first = false;
+                    } else {
+                        io::stdout().write_all(b" ").unwrap();
+                    }
+                    io::stdout().write_all(name.as_bytes()).unwrap();
+                }
+            }
+
+            io::stdout().write(b"\n\r$ ").unwrap();
+        } else {
+            io::stdout().write(&[7]).unwrap();
+        }
+
+        io::stdout().flush().unwrap();
+        self.is_second_update.set(true);
+
         let end = line.pos();
         let mut elected_with_space = elected.to_owned();
         elected_with_space.push(' ');
@@ -226,9 +268,15 @@ impl Completer for CustomRLCompleter {
 }
 
 impl CustomRLCompleter {
-    fn new(env_path_executable_names: Vec<String>) -> Self {
+    fn new(mut env_path_executable_names: Vec<String>) -> Self {
+        for name in SHELL_BUILTIN_COMMANDS.iter().rev() {
+            env_path_executable_names.insert(0, name.to_string());
+        }
+
         Self {
-            env_path_executable_names,
+            executable_names: env_path_executable_names,
+            is_second_update: Cell::new(false),
+            prefix: Cell::new(String::new()),
         }
     }
 }
