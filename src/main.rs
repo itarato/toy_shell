@@ -21,6 +21,17 @@ use arg_parser::*;
 use command::*;
 use redirect::*;
 
+fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
+    let len = lhs.len().min(rhs.len());
+    for i in 0..len {
+        if lhs[i..=i] != rhs[i..=i] {
+            return i;
+        }
+    }
+
+    len
+}
+
 struct CommandWithContext {
     cmd: Command,
     stdout_redirect: MaybeRedirect,
@@ -187,6 +198,16 @@ impl Candidate for CustomRLCandidate {
     }
 }
 
+impl CustomRLCandidate {
+    fn new(mut word: String, is_prefix_only: bool) -> Self {
+        if !is_prefix_only {
+            word.push(' ');
+        }
+
+        Self { word }
+    }
+}
+
 #[derive(Helper, Validator, Highlighter, Hinter)]
 struct CustomRLCompleter {
     executable_names: BTreeSet<String>,
@@ -195,14 +216,28 @@ struct CustomRLCompleter {
 }
 
 impl CustomRLCompleter {
-    fn matching_names(&self, prefix: &str) -> Vec<String> {
+    fn matching_names(&self, prefix: &str) -> (Vec<String>, String) {
         let mut options = vec![];
+        let mut is_first_match = true;
+        let mut shared_prefix = "";
+
         for name in &self.executable_names {
             if name.starts_with(&prefix) {
                 options.push(name.clone());
+
+                if is_first_match {
+                    is_first_match = false;
+                    shared_prefix = name.as_str();
+                } else {
+                    let shared_len = shared_prefix_len(shared_prefix, &name);
+                    if shared_len < shared_prefix.len() {
+                        shared_prefix = &shared_prefix[0..shared_len];
+                    }
+                }
             }
         }
-        options
+
+        (options, shared_prefix.into())
     }
 
     fn update_single_match(
@@ -213,9 +248,7 @@ impl CustomRLCompleter {
         cl: &mut Changeset,
     ) {
         let end = line.pos();
-        let mut elected_with_space = elected.to_owned();
-        elected_with_space.push(' ');
-        line.replace(start..end, &elected_with_space, cl);
+        line.replace(start..end, elected, cl);
     }
 
     fn update_multiple_match(&self, options: Vec<String>) {
@@ -252,16 +285,23 @@ impl Completer for CustomRLCompleter {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         // Reset memory.
         self.is_second_update.set(false);
-        let matching_names = self.matching_names(line);
-        self.options.set(matching_names.clone());
+        let (matching_names, longest_shared_prefix) = self.matching_names(line);
 
-        return Ok((
-            0,
+        let completions = if longest_shared_prefix.len() > line.len() {
+            self.options.set(vec![longest_shared_prefix.clone()]);
+            vec![
+                CustomRLCandidate::new(longest_shared_prefix.clone(), matching_names.len() > 1),
+                CustomRLCandidate::new(longest_shared_prefix, matching_names.len() > 1),
+            ]
+        } else {
+            self.options.set(matching_names.clone());
             matching_names
                 .into_iter()
-                .map(|name| CustomRLCandidate { word: name.clone() })
-                .collect(),
-        ));
+                .map(|name| CustomRLCandidate::new(name.clone(), false))
+                .collect()
+        };
+
+        return Ok((0, completions));
     }
 
     fn update(&self, line: &mut LineBuffer, start: usize, elected: &str, cl: &mut Changeset) {
