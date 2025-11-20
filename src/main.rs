@@ -9,7 +9,7 @@ use rustyline::{
 use std::io::{self, Write};
 use std::{
     cell::Cell,
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
 };
 
@@ -189,9 +189,56 @@ impl Candidate for CustomRLCandidate {
 
 #[derive(Helper, Validator, Highlighter, Hinter)]
 struct CustomRLCompleter {
-    executable_names: Vec<String>,
+    executable_names: BTreeSet<String>,
     is_second_update: Cell<bool>,
-    prefix: Cell<String>,
+    options: Cell<Vec<String>>,
+}
+
+impl CustomRLCompleter {
+    fn matching_names(&self, prefix: &str) -> Vec<String> {
+        let mut options = vec![];
+        for name in &self.executable_names {
+            if name.starts_with(&prefix) {
+                options.push(name.clone());
+            }
+        }
+        options
+    }
+
+    fn update_single_match(
+        &self,
+        line: &mut LineBuffer,
+        start: usize,
+        elected: &str,
+        cl: &mut Changeset,
+    ) {
+        let end = line.pos();
+        let mut elected_with_space = elected.to_owned();
+        elected_with_space.push(' ');
+        line.replace(start..end, &elected_with_space, cl);
+    }
+
+    fn update_multiple_match(&self, options: Vec<String>) {
+        if self.is_second_update.get() {
+            let mut is_first = true;
+            for name in &options {
+                if is_first {
+                    io::stdout().write(b"\n\r").unwrap();
+                    is_first = false;
+                } else {
+                    io::stdout().write_all(b"  ").unwrap();
+                }
+                io::stdout().write_all(name.as_bytes()).unwrap();
+            }
+
+            io::stdout().write(b"\n\r$ ").unwrap();
+        } else {
+            io::stdout().write(&[7]).unwrap();
+        }
+
+        io::stdout().flush().unwrap();
+        self.is_second_update.set(true);
+    }
 }
 
 impl Completer for CustomRLCompleter {
@@ -205,80 +252,46 @@ impl Completer for CustomRLCompleter {
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         // Reset memory.
         self.is_second_update.set(false);
-        self.prefix.set(line.into());
+        let matching_names = self.matching_names(line);
+        self.options.set(matching_names.clone());
 
-        for name in SHELL_BUILTIN_COMMANDS {
-            if name.starts_with(line) {
-                return Ok((
-                    0,
-                    vec![
-                        CustomRLCandidate { word: name.into() },
-                        CustomRLCandidate { word: name.into() },
-                    ],
-                ));
-            }
-        }
-
-        for name in &self.executable_names {
-            if name.starts_with(line) {
-                return Ok((
-                    0,
-                    vec![
-                        CustomRLCandidate { word: name.into() },
-                        CustomRLCandidate { word: name.into() },
-                    ],
-                ));
-            }
-        }
-
-        Ok((0, vec![]))
+        return Ok((
+            0,
+            matching_names
+                .into_iter()
+                .map(|name| CustomRLCandidate { word: name.clone() })
+                .collect(),
+        ));
     }
 
     fn update(&self, line: &mut LineBuffer, start: usize, elected: &str, cl: &mut Changeset) {
-        if self.is_second_update.get() {
-            let prefix = self.prefix.take();
-            self.prefix.set(prefix.clone());
+        let options = self.options.take();
+        self.options.set(options.clone());
 
-            let mut is_first = true;
-            for name in &self.executable_names {
-                if name.starts_with(&prefix) {
-                    if is_first {
-                        io::stdout().write(b"\n\r").unwrap();
-                        is_first = false;
-                    } else {
-                        io::stdout().write_all(b"  ").unwrap();
-                    }
-                    io::stdout().write_all(name.as_bytes()).unwrap();
-                }
-            }
-
-            io::stdout().write(b"\n\r$ ").unwrap();
+        if options.len() <= 1 {
+            self.update_single_match(line, start, elected, cl);
         } else {
-            io::stdout().write(&[7]).unwrap();
+            self.update_multiple_match(options);
         }
-
-        io::stdout().flush().unwrap();
-        self.is_second_update.set(true);
-
-        let end = line.pos();
-        let mut elected_with_space = elected.to_owned();
-        elected_with_space.push(' ');
-        line.replace(start..end, &elected_with_space, cl);
     }
 }
 
 impl CustomRLCompleter {
-    fn new(mut env_path_executable_names: Vec<String>) -> Self {
-        for name in SHELL_BUILTIN_COMMANDS.iter().rev() {
-            env_path_executable_names.insert(0, name.to_string());
+    fn new(env_path_executable_names: Vec<String>) -> Self {
+        let mut executable_names = BTreeSet::new();
+
+        for name in SHELL_BUILTIN_COMMANDS {
+            executable_names.insert(name.to_string());
         }
 
-        env_path_executable_names.sort();
+        for name in env_path_executable_names {
+            executable_names.insert(name);
+        }
 
         Self {
-            executable_names: env_path_executable_names,
+            executable_names,
             is_second_update: Cell::new(false),
-            prefix: Cell::new(String::new()),
+            options: Cell::new(vec![]),
         }
     }
 }
