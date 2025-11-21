@@ -251,7 +251,14 @@ impl CustomRLCompleter {
         line.replace(start..end, elected, cl);
     }
 
-    fn update_multiple_match(&self, options: Vec<String>) {
+    fn update_multiple_match(
+        &self,
+        options: Vec<String>,
+        line: &mut LineBuffer,
+        start: usize,
+        elected: &str,
+        cl: &mut Changeset,
+    ) {
         if self.is_second_update.get() {
             let mut is_first = true;
             for name in &options {
@@ -271,6 +278,9 @@ impl CustomRLCompleter {
 
         io::stdout().flush().unwrap();
         self.is_second_update.set(true);
+
+        let end = line.pos();
+        line.replace(start..end, elected, cl);
     }
 }
 
@@ -287,14 +297,24 @@ impl Completer for CustomRLCompleter {
         self.is_second_update.set(false);
         let (matching_names, longest_shared_prefix) = self.matching_names(line);
 
-        let completions = if longest_shared_prefix.len() > line.len() {
-            self.options.set(vec![longest_shared_prefix.clone()]);
-            vec![
-                CustomRLCandidate::new(longest_shared_prefix.clone(), matching_names.len() > 1),
-                CustomRLCandidate::new(longest_shared_prefix, matching_names.len() > 1),
-            ]
+        self.options.set(matching_names.clone());
+
+        let completions = if matching_names.len() > 1 {
+            if longest_shared_prefix.len() > line.len() {
+                // Multiple matches + a better shared prefix:
+                vec![
+                    CustomRLCandidate::new(longest_shared_prefix.clone(), true),
+                    CustomRLCandidate::new(longest_shared_prefix, true),
+                ]
+            } else {
+                // Multiple matches - no better prefix.
+                vec![
+                    CustomRLCandidate::new(longest_shared_prefix.clone(), true),
+                    CustomRLCandidate::new(longest_shared_prefix, true),
+                ]
+            }
         } else {
-            self.options.set(matching_names.clone());
+            // One or zero match.
             matching_names
                 .into_iter()
                 .map(|name| CustomRLCandidate::new(name.clone(), false))
@@ -311,7 +331,7 @@ impl Completer for CustomRLCompleter {
         if options.len() <= 1 {
             self.update_single_match(line, start, elected, cl);
         } else {
-            self.update_multiple_match(options);
+            self.update_multiple_match(options, line, start, elected, cl);
         }
     }
 }
