@@ -1,4 +1,4 @@
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum Command {
     Exit(i32),
     Echo(Vec<String>),

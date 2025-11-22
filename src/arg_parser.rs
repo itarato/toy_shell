@@ -241,6 +241,8 @@ impl ArgParser {
                     args.clear();
                     stdout_redirect = None;
                     stderr_redirect = None;
+
+                    is_first = true;
                 } else {
                     args.push(part);
                 }

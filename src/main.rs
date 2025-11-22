@@ -34,13 +34,14 @@ fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
     len
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct CommandWithContext {
     cmd: Command,
     stdout_redirect: MaybeRedirect,
     stderr_redirect: MaybeRedirect,
 }
 
+#[derive(Debug)]
 struct PipedCommands(Vec<CommandWithContext>);
 
 impl PipedCommands {
@@ -515,7 +516,10 @@ fn main() {
             }
         };
 
+        // let (pipe_reader, pipe_writer) = std::io::pipe().expect("Failed establishing pipe");
+
         let piped_cmds = parse_command(buf.trim());
+        dbg!(&piped_cmds);
         for cmd_with_ctx in piped_cmds.0 {
             execute_command(cmd_with_ctx, &mut rl, &env_paths, &buf);
         }
