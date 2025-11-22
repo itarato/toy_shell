@@ -11,6 +11,7 @@ use std::{
     cell::Cell,
     collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
+    process,
 };
 
 mod arg_parser;
@@ -403,14 +404,14 @@ fn execute_command(
     original_input: &String,
     pipe_reader: Option<io::PipeReader>,
     pipe_writer: Option<io::PipeWriter>,
-) {
+) -> Option<process::Child> {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
     if !verify_redirect_exist(&cmd_with_ctx.stdout_redirect, &orig_cmd_name) {
-        return;
+        return None;
     }
     if !verify_redirect_exist(&cmd_with_ctx.stderr_redirect, &orig_cmd_name) {
-        return;
+        return None;
     }
 
     match cmd_with_ctx.cmd {
@@ -448,6 +449,17 @@ fn execute_command(
             }
             if let Some(writer) = pipe_writer {
                 os_command.stdout(writer);
+
+                return match os_command.spawn() {
+                    Ok(child) => Some(child),
+                    Err(_) => {
+                        output(
+                            format!("{}: command not found", name),
+                            cmd_with_ctx.stdout_redirect,
+                        );
+                        None
+                    }
+                };
             }
 
             if let Ok(process_output) = os_command.output() {
@@ -498,6 +510,8 @@ fn execute_command(
     };
 
     io::stdout().flush().unwrap();
+
+    None
 }
 
 fn main() {
@@ -516,6 +530,8 @@ fn main() {
 
     rl.set_helper(Some(rl_completer));
     let _ = rl.load_history("history.txt");
+
+    let mut children_procs = vec![];
 
     loop {
         let buf = match rl.readline("$ ") {
@@ -542,14 +558,16 @@ fn main() {
                 pipe_writer = Some(pw);
             }
 
-            execute_command(
+            if let Some(child_proc) = execute_command(
                 cmd_with_ctx,
                 &mut rl,
                 &env_paths,
                 &buf,
                 pipe_reader.take(),
                 pipe_writer.take(),
-            );
+            ) {
+                children_procs.push(child_proc);
+            }
 
             pipe_reader = Some(pr);
         }
