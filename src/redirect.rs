@@ -1,5 +1,6 @@
 use std::{fs::File, io};
 
+#[derive(Clone)]
 //                           Path    Append?
 pub(crate) struct Redirect {
     pub(crate) filename: String,

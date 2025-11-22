@@ -15,6 +15,8 @@ pub(crate) struct UnidentifiedCommand {
     pub(crate) stderr_redirect: MaybeRedirect,
 }
 
+pub(crate) struct PipedUnidentifiedCommands(pub(crate) Vec<UnidentifiedCommand>);
+
 pub(crate) struct ArgParser {
     chars: Vec<char>,
     i: usize,
@@ -78,7 +80,7 @@ impl ArgParser {
         }
     }
 
-    pub(crate) fn parse(mut self) -> Option<UnidentifiedCommand> {
+    pub(crate) fn parse(mut self) -> Option<PipedUnidentifiedCommands> {
         let mut parts: Vec<String> = vec![];
 
         while !self.at_end() {
@@ -159,59 +161,99 @@ impl ArgParser {
             parts.push(self.buf.clone());
         }
 
-        if parts.len() < 1 {
-            Some(UnidentifiedCommand {
+        if parts.is_empty() {
+            Some(PipedUnidentifiedCommands(vec![UnidentifiedCommand {
                 name: "".into(),
                 args: vec![],
                 stdout_redirect: None,
                 stderr_redirect: None,
-            })
+            }]))
         } else {
-            let name = parts.remove(0);
-            Some(ArgParser::build_unidentified_command(name, parts))
+            ArgParser::build_unidentified_command(parts)
         }
     }
 
-    fn build_unidentified_command(name: String, mut args: Vec<String>) -> UnidentifiedCommand {
+    fn build_unidentified_command(mut parts: Vec<String>) -> Option<PipedUnidentifiedCommands> {
+        let mut piped_unidentified_commands = vec![];
+
         let mut stdout_redirect = None;
         let mut stderr_redirect = None;
+        let mut is_first = true;
+        let mut name = String::new();
+        let mut args = vec![];
 
-        let mut i = 0usize;
-        while i + 1 < args.len() {
-            if args[i] == ">" || args[i] == "1>" {
-                stdout_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: false,
-                });
-                args.remove(i);
-            } else if args[i] == "2>" {
-                stderr_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: false,
-                });
-                args.remove(i);
-            } else if args[i] == ">>" || args[i] == "1>>" {
-                stdout_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: true,
-                });
-                args.remove(i);
-            } else if args[i] == "2>>" {
-                stderr_redirect = Some(Redirect {
-                    filename: args.remove(i + 1),
-                    is_append: true,
-                });
-                args.remove(i);
+        while !parts.is_empty() {
+            let part = parts.remove(0);
+
+            if is_first {
+                is_first = false;
+                name = part;
             } else {
-                i += 1;
+                if part == ">" || part == "1>" {
+                    if parts.is_empty() {
+                        return None;
+                    }
+
+                    stdout_redirect = Some(Redirect {
+                        filename: parts.remove(0),
+                        is_append: false,
+                    });
+                } else if part == "2>" {
+                    if parts.is_empty() {
+                        return None;
+                    }
+
+                    stderr_redirect = Some(Redirect {
+                        filename: parts.remove(0),
+                        is_append: false,
+                    });
+                } else if part == ">>" || part == "1>>" {
+                    if parts.is_empty() {
+                        return None;
+                    }
+
+                    stdout_redirect = Some(Redirect {
+                        filename: parts.remove(0),
+                        is_append: true,
+                    });
+                } else if part == "2>>" {
+                    if parts.is_empty() {
+                        return None;
+                    }
+
+                    stderr_redirect = Some(Redirect {
+                        filename: parts.remove(0),
+                        is_append: true,
+                    });
+                } else if part == "|" {
+                    if parts.is_empty() {
+                        return None;
+                    }
+
+                    piped_unidentified_commands.push(UnidentifiedCommand {
+                        name: name.clone(),
+                        args: args.clone(),
+                        stdout_redirect: stdout_redirect.clone(),
+                        stderr_redirect: stderr_redirect.clone(),
+                    });
+
+                    name.clear();
+                    args.clear();
+                    stdout_redirect = None;
+                    stderr_redirect = None;
+                } else {
+                    args.push(part);
+                }
             }
         }
 
-        UnidentifiedCommand {
-            name,
-            args,
-            stdout_redirect,
-            stderr_redirect,
-        }
+        piped_unidentified_commands.push(UnidentifiedCommand {
+            name: name.clone(),
+            args: args.clone(),
+            stdout_redirect: stdout_redirect.clone(),
+            stderr_redirect: stderr_redirect.clone(),
+        });
+
+        Some(PipedUnidentifiedCommands(piped_unidentified_commands))
     }
 }

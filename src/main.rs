@@ -21,6 +21,8 @@ use arg_parser::*;
 use command::*;
 use redirect::*;
 
+const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
+
 fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
     let len = lhs.len().min(rhs.len());
     for i in 0..len {
@@ -32,74 +34,83 @@ fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
     len
 }
 
+#[derive(Clone)]
 struct CommandWithContext {
     cmd: Command,
     stdout_redirect: MaybeRedirect,
     stderr_redirect: MaybeRedirect,
 }
 
-const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
+struct PipedCommands(Vec<CommandWithContext>);
 
-fn parse_command(raw: &str) -> CommandWithContext {
-    let raw_cmd = match ArgParser::new(raw).parse() {
-        Some(v) => v,
-        None => {
-            return CommandWithContext {
-                cmd: Command::Invalid,
-                stdout_redirect: None,
-                stderr_redirect: None,
-            }
-        }
-    };
-
-    let cmd = if raw_cmd.name == "exit" {
-        let exit_code = if raw_cmd.args.len() == 1 {
-            if let Ok(v) = i32::from_str_radix(&raw_cmd.args[0], 10) {
-                v
-            } else {
-                return CommandWithContext {
-                    cmd: Command::Invalid,
-                    stdout_redirect: None,
-                    stderr_redirect: None,
-                };
-            }
-        } else if raw_cmd.args.len() > 1 {
-            return CommandWithContext {
-                cmd: Command::Invalid,
-                stdout_redirect: None,
-                stderr_redirect: None,
-            };
-        } else {
-            0
-        };
-        Command::Exit(exit_code)
-    } else if raw_cmd.name == "echo" {
-        Command::Echo(raw_cmd.args)
-    } else if raw.starts_with("type") {
-        if raw_cmd.args.len() != 1 {
-            Command::Invalid
-        } else {
-            Command::Type(raw_cmd.args[0].clone())
-        }
-    } else if raw_cmd.name == "pwd" {
-        Command::Pwd
-    } else if raw_cmd.name == "cd" {
-        if raw_cmd.args.len() != 1 {
-            Command::Invalid
-        } else {
-            Command::Cd(raw_cmd.args[0].clone())
-        }
-    } else if raw_cmd.name.is_empty() {
-        Command::Empty
-    } else {
-        Command::Unknown(raw_cmd.name, raw_cmd.args)
-    };
-
-    CommandWithContext {
-        cmd,
-        stdout_redirect: raw_cmd.stdout_redirect,
-        stderr_redirect: raw_cmd.stderr_redirect,
+impl PipedCommands {
+    fn new_invalid() -> Self {
+        Self(vec![CommandWithContext {
+            cmd: Command::Invalid,
+            stdout_redirect: None,
+            stderr_redirect: None,
+        }])
     }
+}
+
+fn parse_command(raw: &str) -> PipedCommands {
+    let mut raw_cmds = match ArgParser::new(raw).parse() {
+        Some(v) => v.0,
+        None => {
+            return PipedCommands(vec![CommandWithContext {
+                cmd: Command::Invalid,
+                stdout_redirect: None,
+                stderr_redirect: None,
+            }])
+        }
+    };
+
+    let mut cmds_with_context = vec![];
+    while !raw_cmds.is_empty() {
+        let raw_cmd = raw_cmds.remove(0);
+        let cmd = if raw_cmd.name == "exit" {
+            let exit_code = if raw_cmd.args.len() == 1 {
+                if let Ok(v) = i32::from_str_radix(&raw_cmd.args[0], 10) {
+                    v
+                } else {
+                    return PipedCommands::new_invalid();
+                }
+            } else if raw_cmd.args.len() > 1 {
+                return PipedCommands::new_invalid();
+            } else {
+                0
+            };
+            Command::Exit(exit_code)
+        } else if raw_cmd.name == "echo" {
+            Command::Echo(raw_cmd.args)
+        } else if raw.starts_with("type") {
+            if raw_cmd.args.len() != 1 {
+                Command::Invalid
+            } else {
+                Command::Type(raw_cmd.args[0].clone())
+            }
+        } else if raw_cmd.name == "pwd" {
+            Command::Pwd
+        } else if raw_cmd.name == "cd" {
+            if raw_cmd.args.len() != 1 {
+                Command::Invalid
+            } else {
+                Command::Cd(raw_cmd.args[0].clone())
+            }
+        } else if raw_cmd.name.is_empty() {
+            Command::Empty
+        } else {
+            Command::Unknown(raw_cmd.name, raw_cmd.args)
+        };
+
+        cmds_with_context.push(CommandWithContext {
+            cmd,
+            stdout_redirect: raw_cmd.stdout_redirect,
+            stderr_redirect: raw_cmd.stderr_redirect,
+        });
+    }
+
+    PipedCommands(cmds_with_context)
 }
 
 fn verify_executable(name: &str, env_paths: &Vec<PathBuf>) -> Option<String> {
@@ -384,6 +395,97 @@ fn preload_exec_names(env_paths: &Vec<PathBuf>) -> Vec<String> {
     out
 }
 
+fn execute_command(
+    cmd_with_ctx: CommandWithContext,
+    rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
+    env_paths: &Vec<PathBuf>,
+    original_input: &String,
+) {
+    let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
+
+    if !verify_redirect_exist(&cmd_with_ctx.stdout_redirect, &orig_cmd_name) {
+        return;
+    }
+    if !verify_redirect_exist(&cmd_with_ctx.stderr_redirect, &orig_cmd_name) {
+        return;
+    }
+
+    match cmd_with_ctx.cmd {
+        Command::Exit(exit_code) => {
+            let _ = rl.save_history("history.txt");
+            std::process::exit(exit_code);
+        }
+        Command::Echo(parts) => {
+            output(format!("{}", parts.join(" ")), cmd_with_ctx.stdout_redirect);
+            output_error(String::new(), cmd_with_ctx.stderr_redirect);
+        }
+        Command::Type(what) => {
+            if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
+                output(
+                    format!("{} is a shell builtin", what),
+                    cmd_with_ctx.stdout_redirect,
+                );
+            } else {
+                match verify_executable(&what, &env_paths) {
+                    Some(path) => output(
+                        format!("{} is {}", what, path),
+                        cmd_with_ctx.stdout_redirect,
+                    ),
+                    _ => output(format!("{}: not found", what), cmd_with_ctx.stdout_redirect),
+                }
+            }
+        }
+        Command::Unknown(name, args) => {
+            if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
+                output(
+                    String::from_utf8(process_output.stdout)
+                        .unwrap()
+                        .trim()
+                        .into(),
+                    cmd_with_ctx.stdout_redirect,
+                );
+
+                output_error(
+                    String::from_utf8(process_output.stderr)
+                        .unwrap()
+                        .trim()
+                        .into(),
+                    cmd_with_ctx.stderr_redirect,
+                );
+            } else {
+                output(
+                    format!("{}: command not found", name),
+                    cmd_with_ctx.stdout_redirect,
+                );
+            }
+        }
+        Command::Pwd => output(
+            format!(
+                "{}",
+                std::env::current_dir()
+                    .expect("Cannot retrieve current work dir")
+                    .to_str()
+                    .expect("Cannot stringify path")
+            ),
+            cmd_with_ctx.stdout_redirect,
+        ),
+        Command::Cd(path) => match std::env::set_current_dir(home_path_expand(path.clone())) {
+            Ok(_) => {}
+            Err(_) => output(
+                format!("cd: {}: No such file or directory", path.to_string()),
+                cmd_with_ctx.stdout_redirect,
+            ),
+        },
+        Command::Empty => {}
+        Command::Invalid => output(
+            format!("{}: command not found", original_input.trim()),
+            cmd_with_ctx.stdout_redirect,
+        ),
+    };
+
+    io::stdout().flush().unwrap();
+}
+
 fn main() {
     let mut env_vars: HashMap<String, String> = HashMap::new();
     for (k, v) in std::env::vars() {
@@ -413,89 +515,9 @@ fn main() {
             }
         };
 
-        let cmd_with_ctx = parse_command(buf.trim());
-        let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
-
-        if !verify_redirect_exist(&cmd_with_ctx.stdout_redirect, &orig_cmd_name) {
-            continue;
+        let piped_cmds = parse_command(buf.trim());
+        for cmd_with_ctx in piped_cmds.0 {
+            execute_command(cmd_with_ctx, &mut rl, &env_paths, &buf);
         }
-        if !verify_redirect_exist(&cmd_with_ctx.stderr_redirect, &orig_cmd_name) {
-            continue;
-        }
-
-        match cmd_with_ctx.cmd {
-            Command::Exit(exit_code) => {
-                let _ = rl.save_history("history.txt");
-                std::process::exit(exit_code);
-            }
-            Command::Echo(parts) => {
-                output(format!("{}", parts.join(" ")), cmd_with_ctx.stdout_redirect);
-                output_error(String::new(), cmd_with_ctx.stderr_redirect);
-            }
-            Command::Type(what) => {
-                if SHELL_BUILTIN_COMMANDS.contains(&what.as_str()) {
-                    output(
-                        format!("{} is a shell builtin", what),
-                        cmd_with_ctx.stdout_redirect,
-                    );
-                } else {
-                    match verify_executable(&what, &env_paths) {
-                        Some(path) => output(
-                            format!("{} is {}", what, path),
-                            cmd_with_ctx.stdout_redirect,
-                        ),
-                        _ => output(format!("{}: not found", what), cmd_with_ctx.stdout_redirect),
-                    }
-                }
-            }
-            Command::Unknown(name, args) => {
-                if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
-                    output(
-                        String::from_utf8(process_output.stdout)
-                            .unwrap()
-                            .trim()
-                            .into(),
-                        cmd_with_ctx.stdout_redirect,
-                    );
-
-                    output_error(
-                        String::from_utf8(process_output.stderr)
-                            .unwrap()
-                            .trim()
-                            .into(),
-                        cmd_with_ctx.stderr_redirect,
-                    );
-                } else {
-                    output(
-                        format!("{}: command not found", name),
-                        cmd_with_ctx.stdout_redirect,
-                    );
-                }
-            }
-            Command::Pwd => output(
-                format!(
-                    "{}",
-                    std::env::current_dir()
-                        .expect("Cannot retrieve current work dir")
-                        .to_str()
-                        .expect("Cannot stringify path")
-                ),
-                cmd_with_ctx.stdout_redirect,
-            ),
-            Command::Cd(path) => match std::env::set_current_dir(home_path_expand(path.clone())) {
-                Ok(_) => {}
-                Err(_) => output(
-                    format!("cd: {}: No such file or directory", path.to_string()),
-                    cmd_with_ctx.stdout_redirect,
-                ),
-            },
-            Command::Empty => {}
-            Command::Invalid => output(
-                format!("{}: command not found", buf.trim()),
-                cmd_with_ctx.stdout_redirect,
-            ),
-        };
-
-        io::stdout().flush().unwrap();
     }
 }
