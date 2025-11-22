@@ -401,6 +401,8 @@ fn execute_command(
     rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
     env_paths: &Vec<PathBuf>,
     original_input: &String,
+    pipe_reader: Option<io::PipeReader>,
+    pipe_writer: Option<io::PipeWriter>,
 ) {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
@@ -516,12 +518,25 @@ fn main() {
             }
         };
 
-        // let (pipe_reader, pipe_writer) = std::io::pipe().expect("Failed establishing pipe");
-
         let piped_cmds = parse_command(buf.trim());
-        dbg!(&piped_cmds);
+
+        let mut pipe_reader: Option<io::PipeReader> = None;
+        let mut pipe_writer: Option<io::PipeWriter>;
+
         for cmd_with_ctx in piped_cmds.0 {
-            execute_command(cmd_with_ctx, &mut rl, &env_paths, &buf);
+            let (pr, pw) = io::pipe().expect("Failed_making pipe");
+            pipe_writer = Some(pw);
+
+            execute_command(
+                cmd_with_ctx,
+                &mut rl,
+                &env_paths,
+                &buf,
+                pipe_reader.take(),
+                pipe_writer.take(),
+            );
+
+            pipe_reader = Some(pr);
         }
     }
 }
