@@ -439,7 +439,18 @@ fn execute_command(
             }
         }
         Command::Unknown(name, args) => {
-            if let Ok(process_output) = std::process::Command::new(&name).args(&args).output() {
+            let ref mut os_command = std::process::Command::new(&name);
+
+            os_command.args(&args);
+
+            if let Some(reader) = pipe_reader {
+                os_command.stdin(reader);
+            }
+            if let Some(writer) = pipe_writer {
+                os_command.stdout(writer);
+            }
+
+            if let Ok(process_output) = os_command.output() {
                 output(
                     String::from_utf8(process_output.stdout)
                         .unwrap()
@@ -518,14 +529,18 @@ fn main() {
             }
         };
 
-        let piped_cmds = parse_command(buf.trim());
+        let mut piped_cmds = parse_command(buf.trim()).0;
 
         let mut pipe_reader: Option<io::PipeReader> = None;
-        let mut pipe_writer: Option<io::PipeWriter>;
+        let mut pipe_writer: Option<io::PipeWriter> = None;
 
-        for cmd_with_ctx in piped_cmds.0 {
+        while !piped_cmds.is_empty() {
+            let cmd_with_ctx = piped_cmds.remove(0);
             let (pr, pw) = io::pipe().expect("Failed_making pipe");
-            pipe_writer = Some(pw);
+
+            if !piped_cmds.is_empty() {
+                pipe_writer = Some(pw);
+            }
 
             execute_command(
                 cmd_with_ctx,
