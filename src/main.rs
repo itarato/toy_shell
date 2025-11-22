@@ -454,7 +454,7 @@ fn execute_command(
                 output(
                     String::from_utf8(process_output.stdout)
                         .unwrap()
-                        .trim()
+                        .trim_end()
                         .into(),
                     cmd_with_ctx.stdout_redirect,
                 );
@@ -462,7 +462,7 @@ fn execute_command(
                 output_error(
                     String::from_utf8(process_output.stderr)
                         .unwrap()
-                        .trim()
+                        .trim_end()
                         .into(),
                     cmd_with_ctx.stderr_redirect,
                 );
