@@ -11,7 +11,7 @@ use std::{
     cell::Cell,
     collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
-    process,
+    process::{Child, Stdio},
 };
 
 mod arg_parser;
@@ -397,6 +397,12 @@ fn preload_exec_names(env_paths: &Vec<PathBuf>) -> Vec<String> {
     out
 }
 
+enum ExecutionResult {
+    None,
+    Child(Child),
+    ChildWithOutputHandling(Child, Option<Redirect>, Option<Redirect>),
+}
+
 fn execute_command(
     cmd_with_ctx: CommandWithContext,
     rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
@@ -404,14 +410,14 @@ fn execute_command(
     original_input: &String,
     pipe_reader: Option<io::PipeReader>,
     pipe_writer: Option<io::PipeWriter>,
-) -> Option<process::Child> {
+) -> ExecutionResult {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
     if !verify_redirect_exist(&cmd_with_ctx.stdout_redirect, &orig_cmd_name) {
-        return None;
+        return ExecutionResult::None;
     }
     if !verify_redirect_exist(&cmd_with_ctx.stderr_redirect, &orig_cmd_name) {
-        return None;
+        return ExecutionResult::None;
     }
 
     match cmd_with_ctx.cmd {
@@ -451,31 +457,28 @@ fn execute_command(
                 os_command.stdout(writer);
 
                 return match os_command.spawn() {
-                    Ok(child) => Some(child),
+                    Ok(child) => ExecutionResult::Child(child),
                     Err(_) => {
                         output(
                             format!("{}: command not found", name),
                             cmd_with_ctx.stdout_redirect,
                         );
-                        None
+                        ExecutionResult::None
                     }
                 };
+            } else {
+                if cmd_with_ctx.stdout_redirect.is_some() {
+                    os_command.stdout(Stdio::piped());
+                } else {
+                    os_command.stdout(Stdio::inherit());
+                }
+                os_command.stderr(Stdio::piped());
             }
 
-            if let Ok(process_output) = os_command.output() {
-                output(
-                    String::from_utf8(process_output.stdout)
-                        .unwrap()
-                        .trim_end()
-                        .into(),
+            if let Ok(child) = os_command.spawn() {
+                return ExecutionResult::ChildWithOutputHandling(
+                    child,
                     cmd_with_ctx.stdout_redirect,
-                );
-
-                output_error(
-                    String::from_utf8(process_output.stderr)
-                        .unwrap()
-                        .trim_end()
-                        .into(),
                     cmd_with_ctx.stderr_redirect,
                 );
             } else {
@@ -511,7 +514,7 @@ fn execute_command(
 
     io::stdout().flush().unwrap();
 
-    None
+    ExecutionResult::None
 }
 
 fn main() {
@@ -538,12 +541,11 @@ fn main() {
                 s
             }
             Err(_err) => {
-                // dbg!(err);
                 continue;
             }
         };
 
-        let mut children_procs = vec![];
+        let mut exec_results = vec![];
         let mut piped_cmds = parse_command(buf.trim()).0;
 
         let mut pipe_reader: Option<io::PipeReader> = None;
@@ -557,22 +559,49 @@ fn main() {
                 pipe_writer = Some(pw);
             }
 
-            if let Some(child_proc) = execute_command(
+            let result = execute_command(
                 cmd_with_ctx,
                 &mut rl,
                 &env_paths,
                 &buf,
                 pipe_reader.take(),
                 pipe_writer.take(),
-            ) {
-                children_procs.push(child_proc);
-            }
+            );
+            exec_results.push(result);
 
             pipe_reader = Some(pr);
         }
 
-        for mut children_proc in children_procs {
-            children_proc.wait().unwrap();
+        for exec_result in exec_results {
+            match exec_result {
+                ExecutionResult::Child(mut child) => {
+                    child.wait().unwrap();
+                }
+                ExecutionResult::ChildWithOutputHandling(
+                    child,
+                    stdout_redirect,
+                    stderr_redirect,
+                ) => {
+                    let child_output = child.wait_with_output().unwrap();
+
+                    output(
+                        String::from_utf8(child_output.stdout)
+                            .unwrap()
+                            .trim_end()
+                            .into(),
+                        stdout_redirect,
+                    );
+
+                    output_error(
+                        String::from_utf8(child_output.stderr)
+                            .unwrap()
+                            .trim_end()
+                            .into(),
+                        stderr_redirect,
+                    );
+                }
+                ExecutionResult::None => {}
+            };
         }
     }
 }
