@@ -437,6 +437,7 @@ fn execute_command(
     pipe_reader: Option<io::PipeReader>,
     pipe_writer: Option<io::PipeWriter>,
     last_history_save_index: &mut usize,
+    history_file_name: &String,
 ) -> ExecutionResult {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
@@ -449,7 +450,8 @@ fn execute_command(
 
     match cmd_with_ctx.cmd {
         Command::Exit(exit_code) => {
-            let _ = rl.save_history("history.txt");
+            // let _ = rl.save_history(history_file_name);
+            save_history(history_file_name, rl, false, last_history_save_index);
             std::process::exit(exit_code);
         }
         Command::Echo(parts) => {
@@ -564,7 +566,7 @@ fn execute_command(
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
         Command::HistorySave(path, should_append) => {
-            save_history(path, rl, should_append, last_history_save_index);
+            save_history(&path, rl, should_append, last_history_save_index);
             output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
@@ -591,21 +593,8 @@ fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHis
     }
 }
 
-fn load_history(path: &String, rl: &mut Editor<CustomRLCompleter, DefaultHistory>) {
-    rl.history_mut().clear().unwrap();
-
-    let f = fs::File::open(path).unwrap();
-    for line in io::BufReader::new(f).lines() {
-        if let Ok(line) = line {
-            if !line.is_empty() {
-                rl.add_history_entry(line).unwrap();
-            }
-        }
-    }
-}
-
 fn save_history(
-    path: String,
+    path: &String,
     rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
     should_append: bool,
     last_history_save_index: &mut usize,
@@ -648,12 +637,13 @@ fn main() {
     let rl_completer = CustomRLCompleter::new(preload_exec_names(&env_paths));
     let mut rl: Editor<CustomRLCompleter, DefaultHistory> = Editor::new().unwrap();
 
-    if let Some(history_input) = env_vars.get("HISTFILE") {
-        load_history(history_input, &mut rl);
-    }
+    let history_file_name = env_vars
+        .get("HISTFILE")
+        .cloned()
+        .unwrap_or("history.txt".to_string());
 
     rl.set_helper(Some(rl_completer));
-    let _ = rl.load_history("history.txt");
+    let _ = rl.load_history(&history_file_name);
     let mut last_history_save_index = 0usize;
 
     loop {
@@ -689,6 +679,7 @@ fn main() {
                 pipe_reader.take(),
                 pipe_writer.take(),
                 &mut last_history_save_index,
+                &history_file_name,
             );
             exec_results.push(result);
 
