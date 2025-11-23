@@ -8,6 +8,7 @@ enum CommandParseState {
     DoubleQuoteSection,
 }
 
+#[derive(Debug)]
 pub(crate) struct UnidentifiedCommand {
     pub(crate) name: String,
     pub(crate) args: Vec<String>,

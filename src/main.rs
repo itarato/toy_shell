@@ -85,7 +85,7 @@ fn parse_command(raw: &str) -> PipedCommands {
             Command::Exit(exit_code)
         } else if raw_cmd.name == "echo" {
             Command::Echo(raw_cmd.args)
-        } else if raw.starts_with("type") {
+        } else if raw_cmd.name == "type" {
             if raw_cmd.args.len() != 1 {
                 Command::Invalid
             } else {
@@ -147,8 +147,15 @@ fn home_path_expand(path: String) -> String {
     }
 }
 
-fn output(to_stdout: String, stdout_redirect: MaybeRedirect) {
-    if let Some(redirect) = stdout_redirect {
+fn output(
+    to_stdout: String,
+    stdout_redirect: MaybeRedirect,
+    maybe_pipe_writer: Option<io::PipeWriter>,
+) {
+    if let Some(mut pipe_writer) = maybe_pipe_writer {
+        pipe_writer.write_all(to_stdout.as_bytes()).unwrap();
+        pipe_writer.write_all(b"\n").unwrap();
+    } else if let Some(redirect) = stdout_redirect {
         if let Ok(mut f) = redirect.file() {
             if !to_stdout.is_empty() {
                 f.write_all(to_stdout.as_bytes()).unwrap();
@@ -426,7 +433,11 @@ fn execute_command(
             std::process::exit(exit_code);
         }
         Command::Echo(parts) => {
-            output(format!("{}", parts.join(" ")), cmd_with_ctx.stdout_redirect);
+            output(
+                format!("{}", parts.join(" ")),
+                cmd_with_ctx.stdout_redirect,
+                pipe_writer,
+            );
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
         Command::Type(what) => {
@@ -434,14 +445,19 @@ fn execute_command(
                 output(
                     format!("{} is a shell builtin", what),
                     cmd_with_ctx.stdout_redirect,
+                    pipe_writer,
                 );
             } else {
                 match verify_executable(&what, &env_paths) {
-                    Some(path) => output(
-                        format!("{} is {}", what, path),
-                        cmd_with_ctx.stdout_redirect,
-                    ),
-                    _ => output(format!("{}: not found", what), cmd_with_ctx.stdout_redirect),
+                    Some(path) => {
+                        output(
+                            format!("{} is {}", what, path),
+                            cmd_with_ctx.stdout_redirect,
+                            pipe_writer,
+                        );
+                        output_error(String::new(), cmd_with_ctx.stderr_redirect);
+                    }
+                    _ => output_error(format!("{}: not found", what), cmd_with_ctx.stderr_redirect),
                 }
             }
         }
@@ -462,6 +478,7 @@ fn execute_command(
                         output(
                             format!("{}: command not found", name),
                             cmd_with_ctx.stdout_redirect,
+                            None,
                         );
                         ExecutionResult::None
                     }
@@ -485,6 +502,7 @@ fn execute_command(
                 output(
                     format!("{}: command not found", name),
                     cmd_with_ctx.stdout_redirect,
+                    None,
                 );
             }
         }
@@ -497,16 +515,17 @@ fn execute_command(
                     .expect("Cannot stringify path")
             ),
             cmd_with_ctx.stdout_redirect,
+            pipe_writer,
         ),
         Command::Cd(path) => match std::env::set_current_dir(home_path_expand(path.clone())) {
             Ok(_) => {}
-            Err(_) => output(
+            Err(_) => output_error(
                 format!("cd: {}: No such file or directory", path.to_string()),
-                cmd_with_ctx.stdout_redirect,
+                cmd_with_ctx.stderr_redirect,
             ),
         },
         Command::Empty => {}
-        Command::Invalid => output(
+        Command::Invalid => output_error(
             format!("{}: command not found", original_input.trim()),
             cmd_with_ctx.stdout_redirect,
         ),
@@ -590,6 +609,7 @@ fn main() {
                             .trim_end()
                             .into(),
                         stdout_redirect,
+                        None,
                     );
 
                     output_error(
