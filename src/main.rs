@@ -531,7 +531,11 @@ fn execute_command(
             for (i, elem) in rl.history().iter().enumerate() {
                 history_str.push_str(format!("\t{}  {}\n", i + 1, elem).as_str());
             }
-            output(history_str, cmd_with_ctx.stdout_redirect, pipe_writer);
+            output(
+                history_str.trim_end().into(),
+                cmd_with_ctx.stdout_redirect,
+                pipe_writer,
+            );
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
         Command::Empty => {}
