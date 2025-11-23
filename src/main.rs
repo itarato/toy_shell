@@ -105,6 +105,8 @@ fn parse_command(raw: &str) -> PipedCommands {
                 }
             } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-r" {
                 Command::HistoryAppend(raw_cmd.args[1].clone().into())
+            } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-w" {
+                Command::HistorySave(raw_cmd.args[1].clone().into())
             } else {
                 return PipedCommands::new_invalid();
             }
@@ -558,6 +560,11 @@ fn execute_command(
             output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
+        Command::HistorySave(path) => {
+            save_history(path, rl);
+            output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
+            output_error(String::new(), cmd_with_ctx.stderr_redirect);
+        }
         Command::Empty => {}
         Command::Invalid => output_error(
             format!("{}: command not found", original_input.trim()),
@@ -578,6 +585,14 @@ fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHis
                 rl.add_history_entry(line).unwrap();
             }
         }
+    }
+}
+
+fn save_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHistory>) {
+    let mut f = fs::File::create(path).unwrap();
+    for line in rl.history().iter() {
+        f.write_all(line.as_bytes()).unwrap();
+        f.write_all(b"\n").unwrap();
     }
 }
 
