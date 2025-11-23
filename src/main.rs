@@ -591,6 +591,19 @@ fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHis
     }
 }
 
+fn load_history(path: &String, rl: &mut Editor<CustomRLCompleter, DefaultHistory>) {
+    rl.history_mut().clear().unwrap();
+
+    let f = fs::File::open(path).unwrap();
+    for line in io::BufReader::new(f).lines() {
+        if let Ok(line) = line {
+            if !line.is_empty() {
+                rl.add_history_entry(line).unwrap();
+            }
+        }
+    }
+}
+
 fn save_history(
     path: String,
     rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
@@ -634,6 +647,10 @@ fn main() {
 
     let rl_completer = CustomRLCompleter::new(preload_exec_names(&env_paths));
     let mut rl: Editor<CustomRLCompleter, DefaultHistory> = Editor::new().unwrap();
+
+    if let Some(history_input) = env_vars.get("HISTFILE") {
+        load_history(history_input, &mut rl);
+    }
 
     rl.set_helper(Some(rl_completer));
     let _ = rl.load_history("history.txt");
