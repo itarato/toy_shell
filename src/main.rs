@@ -10,6 +10,8 @@ use std::io::{self, Write};
 use std::{
     cell::Cell,
     collections::{BTreeSet, HashMap},
+    fs,
+    io::BufRead,
     path::{Path, PathBuf},
     process::{Child, Stdio},
 };
@@ -94,17 +96,18 @@ fn parse_command(raw: &str) -> PipedCommands {
         } else if raw_cmd.name == "pwd" {
             Command::Pwd
         } else if raw_cmd.name == "history" {
-            let len = if raw_cmd.args.is_empty() {
-                usize::MAX
+            if raw_cmd.args.is_empty() {
+                Command::History(usize::MAX)
             } else if raw_cmd.args.len() == 1 {
                 match usize::from_str_radix(&raw_cmd.args[0], 10) {
-                    Ok(v) => v,
+                    Ok(v) => Command::History(v),
                     Err(_) => return PipedCommands::new_invalid(),
                 }
+            } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-r" {
+                Command::HistoryAppend(raw_cmd.args[1].clone().into())
             } else {
                 return PipedCommands::new_invalid();
-            };
-            Command::History(len)
+            }
         } else if raw_cmd.name == "cd" {
             if raw_cmd.args.len() != 1 {
                 Command::Invalid
@@ -550,6 +553,11 @@ fn execute_command(
             );
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
+        Command::HistoryAppend(path) => {
+            append_to_history(path, rl);
+            output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
+            output_error(String::new(), cmd_with_ctx.stderr_redirect);
+        }
         Command::Empty => {}
         Command::Invalid => output_error(
             format!("{}: command not found", original_input.trim()),
@@ -560,6 +568,17 @@ fn execute_command(
     io::stdout().flush().unwrap();
 
     ExecutionResult::None
+}
+
+fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHistory>) {
+    let f = fs::File::open(path).unwrap();
+    for line in io::BufReader::new(f).lines() {
+        if let Ok(line) = line {
+            if !line.is_empty() {
+                rl.add_history_entry(line).unwrap();
+            }
+        }
+    }
 }
 
 fn main() {
