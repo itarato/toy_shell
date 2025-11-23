@@ -8,7 +8,8 @@ pub(crate) enum Command {
     Pwd,
     History(usize),
     HistoryAppend(String),
-    HistorySave(String),
+    //          Path    Append?
+    HistorySave(String, bool),
     Empty,
     Invalid,
 }
@@ -21,7 +22,7 @@ impl Command {
             Command::Type(_) => "type".into(),
             Command::History(_) => "history".into(),
             Command::HistoryAppend(_) => "history".into(),
-            Command::HistorySave(_) => "history".into(),
+            Command::HistorySave(_, _) => "history".into(),
             Command::Unknown(name, _) => name.clone(),
             Command::Pwd => "pwd".into(),
             Command::Cd(_) => "cd".into(),

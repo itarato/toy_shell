@@ -106,7 +106,9 @@ fn parse_command(raw: &str) -> PipedCommands {
             } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-r" {
                 Command::HistoryAppend(raw_cmd.args[1].clone().into())
             } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-w" {
-                Command::HistorySave(raw_cmd.args[1].clone().into())
+                Command::HistorySave(raw_cmd.args[1].clone().into(), false)
+            } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-a" {
+                Command::HistorySave(raw_cmd.args[1].clone().into(), true)
             } else {
                 return PipedCommands::new_invalid();
             }
@@ -434,6 +436,7 @@ fn execute_command(
     original_input: &String,
     pipe_reader: Option<io::PipeReader>,
     pipe_writer: Option<io::PipeWriter>,
+    last_history_save_index: &mut usize,
 ) -> ExecutionResult {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
@@ -560,8 +563,8 @@ fn execute_command(
             output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
-        Command::HistorySave(path) => {
-            save_history(path, rl);
+        Command::HistorySave(path, should_append) => {
+            save_history(path, rl, should_append, last_history_save_index);
             output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
@@ -588,11 +591,33 @@ fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHis
     }
 }
 
-fn save_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHistory>) {
-    let mut f = fs::File::create(path).unwrap();
-    for line in rl.history().iter() {
+fn save_history(
+    path: String,
+    rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
+    should_append: bool,
+    last_history_save_index: &mut usize,
+) {
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(!should_append)
+        .append(should_append)
+        .open(path)
+        .unwrap();
+
+    let start_index = if should_append {
+        *last_history_save_index
+    } else {
+        0
+    };
+
+    for line in rl.history().iter().skip(start_index) {
         f.write_all(line.as_bytes()).unwrap();
         f.write_all(b"\n").unwrap();
+    }
+
+    if should_append {
+        *last_history_save_index = rl.history().len();
     }
 }
 
@@ -612,6 +637,7 @@ fn main() {
 
     rl.set_helper(Some(rl_completer));
     let _ = rl.load_history("history.txt");
+    let mut last_history_save_index = 0usize;
 
     loop {
         let buf = match rl.readline("$ ") {
@@ -645,6 +671,7 @@ fn main() {
                 &buf,
                 pipe_reader.take(),
                 pipe_writer.take(),
+                &mut last_history_save_index,
             );
             exec_results.push(result);
 
