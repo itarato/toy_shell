@@ -1,7 +1,7 @@
 use is_executable::IsExecutable;
 use rustyline::{
     completion::{Candidate, Completer},
-    history::DefaultHistory,
+    history::{DefaultHistory, History},
     line_buffer::LineBuffer,
     Changeset, Editor, Helper, Highlighter, Hinter, Validator,
 };
@@ -94,7 +94,17 @@ fn parse_command(raw: &str) -> PipedCommands {
         } else if raw_cmd.name == "pwd" {
             Command::Pwd
         } else if raw_cmd.name == "history" {
-            Command::History
+            let len = if raw_cmd.args.is_empty() {
+                usize::MAX
+            } else if raw_cmd.args.len() == 1 {
+                match usize::from_str_radix(&raw_cmd.args[0], 10) {
+                    Ok(v) => v,
+                    Err(_) => return PipedCommands::new_invalid(),
+                }
+            } else {
+                return PipedCommands::new_invalid();
+            };
+            Command::History(len)
         } else if raw_cmd.name == "cd" {
             if raw_cmd.args.len() != 1 {
                 Command::Invalid
@@ -526,10 +536,12 @@ fn execute_command(
                 cmd_with_ctx.stderr_redirect,
             ),
         },
-        Command::History => {
+        Command::History(n) => {
             let mut history_str = String::new();
-            for (i, elem) in rl.history().iter().enumerate() {
-                history_str.push_str(format!("\t{}  {}\n", i + 1, elem).as_str());
+            let history_len = rl.history().len();
+            let start_from = if n >= history_len { 0 } else { history_len - n };
+            for (i, elem) in rl.history().iter().skip(start_from).enumerate() {
+                history_str.push_str(format!("\t{}  {}\n", i + 1 + start_from, elem).as_str());
             }
             output(
                 history_str.trim_end().into(),

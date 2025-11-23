@@ -6,7 +6,7 @@ pub(crate) enum Command {
     Unknown(String, Vec<String>),
     Cd(String),
     Pwd,
-    History,
+    History(usize),
     Empty,
     Invalid,
 }
@@ -17,7 +17,7 @@ impl Command {
             Command::Exit(_) => "exit".into(),
             Command::Echo(_) => "echo".into(),
             Command::Type(_) => "type".into(),
-            Command::History => "history".into(),
+            Command::History(_) => "history".into(),
             Command::Unknown(name, _) => name.clone(),
             Command::Pwd => "pwd".into(),
             Command::Cd(_) => "cd".into(),
