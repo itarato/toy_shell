@@ -531,8 +531,6 @@ fn main() {
     rl.set_helper(Some(rl_completer));
     let _ = rl.load_history("history.txt");
 
-    let mut children_procs = vec![];
-
     loop {
         let buf = match rl.readline("$ ") {
             Ok(s) => {
@@ -545,6 +543,7 @@ fn main() {
             }
         };
 
+        let mut children_procs = vec![];
         let mut piped_cmds = parse_command(buf.trim()).0;
 
         let mut pipe_reader: Option<io::PipeReader> = None;
@@ -570,6 +569,10 @@ fn main() {
             }
 
             pipe_reader = Some(pr);
+        }
+
+        for mut children_proc in children_procs {
+            children_proc.wait().unwrap();
         }
     }
 }
