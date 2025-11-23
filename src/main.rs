@@ -22,7 +22,7 @@ use arg_parser::*;
 use command::*;
 use redirect::*;
 
-const SHELL_BUILTIN_COMMANDS: [&'static str; 5] = ["echo", "type", "exit", "pwd", "cd"];
+const SHELL_BUILTIN_COMMANDS: [&'static str; 6] = ["echo", "type", "exit", "pwd", "cd", "history"];
 
 fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
     let len = lhs.len().min(rhs.len());
@@ -93,6 +93,8 @@ fn parse_command(raw: &str) -> PipedCommands {
             }
         } else if raw_cmd.name == "pwd" {
             Command::Pwd
+        } else if raw_cmd.name == "history" {
+            Command::History
         } else if raw_cmd.name == "cd" {
             if raw_cmd.args.len() != 1 {
                 Command::Invalid
@@ -524,6 +526,14 @@ fn execute_command(
                 cmd_with_ctx.stderr_redirect,
             ),
         },
+        Command::History => {
+            let mut history_str = String::new();
+            for (i, elem) in rl.history().iter().enumerate() {
+                history_str.push_str(format!("\t{}  {}\n", i + 1, elem).as_str());
+            }
+            output(history_str, cmd_with_ctx.stdout_redirect, pipe_writer);
+            output_error(String::new(), cmd_with_ctx.stderr_redirect);
+        }
         Command::Empty => {}
         Command::Invalid => output_error(
             format!("{}: command not found", original_input.trim()),
