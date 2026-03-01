@@ -1,4 +1,11 @@
+mod arg_parser;
+mod command;
+mod redirect;
+
+use arg_parser::*;
+use command::*;
 use is_executable::IsExecutable;
+use redirect::*;
 use rustyline::{
     completion::{Candidate, Completer},
     history::{DefaultHistory, History},
@@ -15,14 +22,6 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Stdio},
 };
-
-mod arg_parser;
-mod command;
-mod redirect;
-
-use arg_parser::*;
-use command::*;
-use redirect::*;
 
 const SHELL_BUILTIN_COMMANDS: [&'static str; 6] = ["echo", "type", "exit", "pwd", "cd", "history"];
 
