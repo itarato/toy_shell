@@ -11,7 +11,8 @@ use rustyline::{
 };
 
 use crate::common::{
-    has_space, matching_files, shared_prefix_len, split_last_cmd_line_arg, SHELL_BUILTIN_COMMANDS,
+    has_space, matching_files, shared_prefix_len, split_last_cmd_line_arg,
+    split_path_match_to_dir_and_prefix, SHELL_BUILTIN_COMMANDS,
 };
 
 pub(crate) struct CustomRLCandidate {
@@ -71,12 +72,18 @@ impl CustomRLCompleter {
 
         if has_space(prefix) {
             // dbg!("FILE PATH");
-            let (cmd_part, last_part) = split_last_cmd_line_arg(prefix).unwrap();
-            let files = matching_files(last_part, ".");
+            let (cmd_part, path_pat) = split_last_cmd_line_arg(prefix).unwrap();
+            let (dir, file_pat) = split_path_match_to_dir_and_prefix(path_pat);
+            let files = matching_files(&file_pat, &dir);
             // dbg!(&prefix);
 
             for file in files {
-                let full = format!("{}{}", cmd_part, file);
+                let full = format!(
+                    "{}{}{}",
+                    cmd_part,
+                    dir.as_ref().unwrap_or(&String::from("")),
+                    file
+                );
                 options.push(full);
                 // shared_prefix = full.as_str();
             }

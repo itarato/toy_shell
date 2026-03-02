@@ -23,8 +23,23 @@ pub(crate) fn split_last_cmd_line_arg(s: &str) -> Option<(&str, &str)> {
         .map(|part| (&s[..s.len() - part.len()], part))
 }
 
-pub(crate) fn matching_files(prefix: &str, dir: &str) -> Vec<String> {
-    std::fs::read_dir(dir)
+pub(crate) fn split_path_match_to_dir_and_prefix(s: &str) -> (Option<String>, String) {
+    let mut parts = s.split('/').collect::<Vec<_>>();
+
+    if parts.is_empty() {
+        panic!();
+    } else if parts.len() == 1 {
+        (None, s.to_string())
+    } else {
+        let last = parts.pop().unwrap();
+        let mut dir = parts.join("/").to_string();
+        dir.push('/');
+        (Some(dir), last.to_string())
+    }
+}
+
+pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> {
+    std::fs::read_dir(dir.as_ref().unwrap_or(&String::from(".")))
         .ok()
         .unwrap()
         .filter_map(|entry| {
