@@ -10,7 +10,7 @@ use rustyline::{
     Changeset, Helper, Highlighter, Hinter, Validator,
 };
 
-use crate::common::SHELL_BUILTIN_COMMANDS;
+use crate::common::{has_space, last_cmd_line_arg, matching_files, SHELL_BUILTIN_COMMANDS};
 
 fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
     let len = lhs.len().min(rhs.len());
@@ -78,17 +78,25 @@ impl CustomRLCompleter {
         let mut is_first_match = true;
         let mut shared_prefix = "";
 
-        for name in &self.executable_names {
-            if name.starts_with(&prefix) {
-                options.push(name.clone());
+        if has_space(prefix) {
+            let last_part = last_cmd_line_arg(prefix).unwrap();
+            let files = matching_files(last_part, ".");
 
-                if is_first_match {
-                    is_first_match = false;
-                    shared_prefix = name.as_str();
-                } else {
-                    let shared_len = shared_prefix_len(shared_prefix, &name);
-                    if shared_len < shared_prefix.len() {
-                        shared_prefix = &shared_prefix[0..shared_len];
+            options.push(String::from("cat history.txt "));
+            shared_prefix = "cat history.txt ";
+        } else {
+            for name in &self.executable_names {
+                if name.starts_with(&prefix) {
+                    options.push(name.clone());
+
+                    if is_first_match {
+                        is_first_match = false;
+                        shared_prefix = name.as_str();
+                    } else {
+                        let shared_len = shared_prefix_len(shared_prefix, &name);
+                        if shared_len < shared_prefix.len() {
+                            shared_prefix = &shared_prefix[0..shared_len];
+                        }
                     }
                 }
             }
