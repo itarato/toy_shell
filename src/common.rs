@@ -6,8 +6,21 @@ pub(crate) fn has_space(s: &str) -> bool {
     chars.len() >= 2 && !chars[0].is_whitespace() && chars.contains(&' ')
 }
 
-pub(crate) fn last_cmd_line_arg(s: &str) -> Option<&str> {
-    s.split(' ').last()
+pub(crate) fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
+    let len = lhs.len().min(rhs.len());
+    for i in 0..len {
+        if lhs[i..=i] != rhs[i..=i] {
+            return i;
+        }
+    }
+
+    len
+}
+
+pub(crate) fn split_last_cmd_line_arg(s: &str) -> Option<(&str, &str)> {
+    s.split(' ')
+        .last()
+        .map(|part| (&s[..s.len() - part.len()], part))
 }
 
 pub(crate) fn matching_files(prefix: &str, dir: &str) -> Vec<String> {

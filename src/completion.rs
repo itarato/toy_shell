@@ -10,18 +10,9 @@ use rustyline::{
     Changeset, Helper, Highlighter, Hinter, Validator,
 };
 
-use crate::common::{has_space, last_cmd_line_arg, matching_files, SHELL_BUILTIN_COMMANDS};
-
-fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
-    let len = lhs.len().min(rhs.len());
-    for i in 0..len {
-        if lhs[i..=i] != rhs[i..=i] {
-            return i;
-        }
-    }
-
-    len
-}
+use crate::common::{
+    has_space, matching_files, shared_prefix_len, split_last_cmd_line_arg, SHELL_BUILTIN_COMMANDS,
+};
 
 pub(crate) struct CustomRLCandidate {
     word: String,
@@ -79,11 +70,16 @@ impl CustomRLCompleter {
         let mut shared_prefix = "";
 
         if has_space(prefix) {
-            let last_part = last_cmd_line_arg(prefix).unwrap();
+            // dbg!("FILE PATH");
+            let (cmd_part, last_part) = split_last_cmd_line_arg(prefix).unwrap();
             let files = matching_files(last_part, ".");
+            // dbg!(&prefix);
 
-            options.push(String::from("cat history.txt "));
-            shared_prefix = "cat history.txt ";
+            for file in files {
+                let full = format!("{}{}", cmd_part, file);
+                options.push(full);
+                // shared_prefix = full.as_str();
+            }
         } else {
             for name in &self.executable_names {
                 if name.starts_with(&prefix) {
