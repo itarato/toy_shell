@@ -21,7 +21,9 @@ pub(crate) struct CustomRLCandidate {
 
 impl Candidate for CustomRLCandidate {
     fn display(&self) -> &str {
-        &self.word
+        // &self.word.split(' ').last().unwrap_or("")
+        // "ABC"
+        panic!()
     }
 
     fn replacement(&self) -> &str {
@@ -68,14 +70,12 @@ impl CustomRLCompleter {
     fn matching_names(&self, prefix: &str) -> (Vec<String>, String) {
         let mut options = vec![];
         let mut is_first_match = true;
-        let mut shared_prefix = "";
+        let mut shared_prefix = String::new();
 
         if has_space(prefix) {
-            // dbg!("FILE PATH");
             let (cmd_part, path_pat) = split_last_cmd_line_arg(prefix).unwrap();
             let (dir, file_pat) = split_path_match_to_dir_and_prefix(path_pat);
             let files = matching_files(&file_pat, &dir);
-            // dbg!(&prefix);
 
             for file in files {
                 let full = format!(
@@ -84,8 +84,8 @@ impl CustomRLCompleter {
                     dir.as_ref().unwrap_or(&String::from("")),
                     file
                 );
+                // shared_prefix = full.clone();
                 options.push(full);
-                // shared_prefix = full.as_str();
             }
         } else {
             for name in &self.executable_names {
@@ -94,11 +94,11 @@ impl CustomRLCompleter {
 
                     if is_first_match {
                         is_first_match = false;
-                        shared_prefix = name.as_str();
+                        shared_prefix = name.clone();
                     } else {
-                        let shared_len = shared_prefix_len(shared_prefix, &name);
+                        let shared_len = shared_prefix_len(&shared_prefix, &name);
                         if shared_len < shared_prefix.len() {
-                            shared_prefix = &shared_prefix[0..shared_len];
+                            shared_prefix = shared_prefix[0..shared_len].to_string();
                         }
                     }
                 }
