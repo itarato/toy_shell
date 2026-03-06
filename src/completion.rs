@@ -11,7 +11,7 @@ use rustyline::{
 };
 
 use crate::common::{
-    has_space, matching_files, shared_prefix_len, split_last_cmd_line_arg,
+    common_prefix, has_space, matching_files, split_last_cmd_line_arg,
     split_path_match_to_dir_and_prefix, SHELL_BUILTIN_COMMANDS,
 };
 
@@ -69,8 +69,7 @@ impl CustomRLCompleter {
 
     fn matching_names(&self, prefix: &str) -> (Vec<String>, String) {
         let mut options = vec![];
-        let mut is_first_match = true;
-        let mut shared_prefix = String::new();
+        let mut shared_prefix = None;
 
         if has_space(prefix) {
             let (cmd_part, path_pat) = split_last_cmd_line_arg(prefix).unwrap();
@@ -78,34 +77,27 @@ impl CustomRLCompleter {
             let files = matching_files(&file_pat, &dir);
 
             for file in files {
-                // let full = format!(
-                //     "{}{}{}",
-                //     cmd_part,
-                //     dir.as_ref().unwrap_or(&String::from("")),
-                //     file
-                // );
-                // shared_prefix = full.clone();
+                let full = format!(
+                    "{}{}{}",
+                    cmd_part,
+                    dir.as_ref().unwrap_or(&String::from("")),
+                    file
+                );
+                shared_prefix = Some(common_prefix(&full, &shared_prefix));
                 options.push(file);
             }
         } else {
-            for name in &self.executable_names {
-                if name.starts_with(&prefix) {
-                    options.push(name.clone());
-
-                    if is_first_match {
-                        is_first_match = false;
-                        shared_prefix = name.clone();
-                    } else {
-                        let shared_len = shared_prefix_len(&shared_prefix, &name);
-                        if shared_len < shared_prefix.len() {
-                            shared_prefix = shared_prefix[0..shared_len].to_string();
-                        }
-                    }
-                }
+            for name in self
+                .executable_names
+                .iter()
+                .filter(|e| e.starts_with(&prefix))
+            {
+                options.push(name.clone());
+                shared_prefix = Some(common_prefix(&name, &shared_prefix));
             }
         }
 
-        (options, shared_prefix.into())
+        (options, shared_prefix.unwrap_or(String::new()))
     }
 
     fn update_single_match(
@@ -130,12 +122,7 @@ impl CustomRLCompleter {
         }
 
         let end = line.pos();
-        let elected_end = if elected.ends_with("/ ") {
-            elected.len() - 1
-        } else {
-            elected.len()
-        };
-        line.replace(start..end, &elected[..elected_end], cl);
+        line.replace(start..end, elected, cl);
     }
 
     fn update_multiple_match(

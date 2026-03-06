@@ -6,15 +6,20 @@ pub(crate) fn has_space(s: &str) -> bool {
     chars.len() >= 2 && !chars[0].is_whitespace() && chars.contains(&' ')
 }
 
-pub(crate) fn shared_prefix_len(lhs: &str, rhs: &str) -> usize {
-    let len = lhs.len().min(rhs.len());
-    for i in 0..len {
-        if lhs[i..=i] != rhs[i..=i] {
-            return i;
+pub(crate) fn common_prefix(subject: &str, current_shared: &Option<String>) -> String {
+    if let Some(current) = current_shared.as_ref() {
+        let mut len = subject.len().min(current.len());
+        for i in 0..len {
+            if subject[i..=i] != current[i..=i] {
+                len = i;
+                break;
+            }
         }
-    }
 
-    len
+        subject[..len].to_string()
+    } else {
+        subject.to_string()
+    }
 }
 
 pub(crate) fn split_last_cmd_line_arg(s: &str) -> Option<(&str, &str)> {
@@ -39,7 +44,7 @@ pub(crate) fn split_path_match_to_dir_and_prefix(s: &str) -> (Option<String>, St
 }
 
 pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> {
-    std::fs::read_dir(dir.as_ref().unwrap_or(&String::from(".")))
+    let matches: Vec<String> = std::fs::read_dir(dir.as_ref().unwrap_or(&String::from(".")))
         .ok()
         .unwrap()
         .filter_map(|entry_result| {
@@ -62,5 +67,21 @@ pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> 
                 })
             })
         })
-        .collect()
+        .collect();
+
+    if matches.len() == 1 && matches[0].ends_with("/") {
+        let subdir = format!(
+            "{}{}",
+            dir.as_ref()
+                .map(|d| format!("{}/", d))
+                .unwrap_or("".to_string()),
+            &matches[0][..matches[0].len() - 1]
+        );
+        matching_files("", &Some(subdir.clone()))
+            .into_iter()
+            .map(|suffix| format!("{}/{}", subdir, suffix))
+            .collect()
+    } else {
+        matches
+    }
 }
