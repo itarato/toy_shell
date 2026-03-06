@@ -42,9 +42,18 @@ pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> 
     std::fs::read_dir(dir.as_ref().unwrap_or(&String::from(".")))
         .ok()
         .unwrap()
-        .filter_map(|entry| {
-            entry.ok().and_then(|e| {
-                e.file_name().into_string().ok().and_then(|name| {
+        .filter_map(|entry_result| {
+            entry_result.ok().and_then(|entry| {
+                let is_dir = entry
+                    .metadata()
+                    .map(|metadata| metadata.is_dir())
+                    .unwrap_or(false);
+
+                entry.file_name().into_string().ok().and_then(|mut name| {
+                    if is_dir {
+                        name.push('/');
+                    }
+
                     if name.starts_with(prefix) {
                         Some(name)
                     } else {

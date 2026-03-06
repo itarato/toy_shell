@@ -78,14 +78,14 @@ impl CustomRLCompleter {
             let files = matching_files(&file_pat, &dir);
 
             for file in files {
-                let full = format!(
-                    "{}{}{}",
-                    cmd_part,
-                    dir.as_ref().unwrap_or(&String::from("")),
-                    file
-                );
+                // let full = format!(
+                //     "{}{}{}",
+                //     cmd_part,
+                //     dir.as_ref().unwrap_or(&String::from("")),
+                //     file
+                // );
                 // shared_prefix = full.clone();
-                options.push(full);
+                options.push(file);
             }
         } else {
             for name in &self.executable_names {
@@ -111,12 +111,31 @@ impl CustomRLCompleter {
     fn update_single_match(
         &self,
         line: &mut LineBuffer,
-        start: usize,
+        mut start: usize,
         elected: &str,
         cl: &mut Changeset,
     ) {
+        // dbg!(format!(
+        //     "Line: {:?} Start: {:?} Elected: {:?}",
+        //     line, start, elected
+        // ));
+
+        if let Some(last_space) = line
+            .chars()
+            .rev()
+            .position(|c| c == ' ' || c == '/')
+            .map(|i| line.len() - i)
+        {
+            start = last_space;
+        }
+
         let end = line.pos();
-        line.replace(start..end, elected, cl);
+        let elected_end = if elected.ends_with("/ ") {
+            elected.len() - 1
+        } else {
+            elected.len()
+        };
+        line.replace(start..end, &elected[..elected_end], cl);
     }
 
     fn update_multiple_match(
@@ -127,6 +146,10 @@ impl CustomRLCompleter {
         elected: &str,
         cl: &mut Changeset,
     ) {
+        // dbg!(format!(
+        //     "Line: {:?} Start: {:?} Elected: {:?}",
+        //     line, start, elected
+        // ));
         if self.is_second_update.get() {
             let mut is_first = true;
             for name in &options {
@@ -148,7 +171,9 @@ impl CustomRLCompleter {
         self.is_second_update.set(true);
 
         let end = line.pos();
-        line.replace(start..end, elected, cl);
+        if !elected.is_empty() {
+            line.replace(start..end, elected, cl);
+        }
     }
 }
 
