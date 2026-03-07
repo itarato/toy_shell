@@ -37,13 +37,17 @@ pub(crate) fn split_path_match_to_dir_and_prefix(s: &str) -> (Option<String>, St
         (None, s.to_string())
     } else {
         let last = parts.pop().unwrap();
-        let mut dir = parts.join("/").to_string();
-        dir.push('/');
+        let dir = parts.join("/").to_string();
         (Some(dir), last.to_string())
     }
 }
 
-pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> {
+pub(crate) fn matching_files(
+    prefix: &str,
+    dir: &Option<String>,
+    is_recursive: bool,
+) -> Vec<String> {
+    // dbg!(prefix, dir);
     let matches: Vec<String> = std::fs::read_dir(dir.as_ref().unwrap_or(&String::from(".")))
         .ok()
         .unwrap()
@@ -69,7 +73,7 @@ pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> 
         })
         .collect();
 
-    if matches.len() == 1 && matches[0].ends_with("/") {
+    if is_recursive && matches.len() == 1 && matches[0].ends_with("/") {
         let subdir = format!(
             "{}{}",
             dir.as_ref()
@@ -77,11 +81,44 @@ pub(crate) fn matching_files(prefix: &str, dir: &Option<String>) -> Vec<String> 
                 .unwrap_or("".to_string()),
             &matches[0][..matches[0].len() - 1]
         );
-        matching_files("", &Some(subdir.clone()))
+        let sub_matches = matching_files("", &Some(subdir.clone()), false);
+        if sub_matches.is_empty() {
+            return matches;
+        }
+
+        sub_matches
             .into_iter()
-            .map(|suffix| format!("{}/{}", subdir, suffix))
+            .map(|suffix| format!("{}/{}", &matches[0][..matches[0].len() - 1], suffix))
             .collect()
     } else {
         matches
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::common::split_path_match_to_dir_and_prefix;
+
+    #[test]
+    fn test_split_path_match_to_dir_and_prefix() {
+        assert_eq!(
+            (Some("target".to_string()), "d".to_string()),
+            split_path_match_to_dir_and_prefix("target/d"),
+        );
+
+        assert_eq!(
+            (Some("target".to_string()), "".to_string()),
+            split_path_match_to_dir_and_prefix("target/"),
+        );
+
+        assert_eq!(
+            (None, "target".to_string()),
+            split_path_match_to_dir_and_prefix("target"),
+        );
+
+        assert_eq!(
+            (Some("target/debug".to_string()), "build".to_string()),
+            split_path_match_to_dir_and_prefix("target/debug/build"),
+        );
     }
 }

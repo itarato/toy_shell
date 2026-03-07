@@ -74,18 +74,33 @@ impl CustomRLCompleter {
         if has_space(prefix) {
             let (cmd_part, path_pat) = split_last_cmd_line_arg(prefix).unwrap();
             let (dir, file_pat) = split_path_match_to_dir_and_prefix(path_pat);
-            let files = matching_files(&file_pat, &dir);
+            let files = matching_files(&file_pat, &dir, false);
+
+            // dbg!(&files);
 
             for file in files {
-                let full = format!(
-                    "{}{}{}",
-                    cmd_part,
-                    dir.as_ref().unwrap_or(&String::from("")),
-                    file
-                );
-                shared_prefix = Some(common_prefix(&full, &shared_prefix));
+                // let full = format!(
+                //     "{}{}{}",
+                //     cmd_part,
+                //     dir.as_ref()
+                //         .map(|d| format!("{}/", d))
+                //         .unwrap_or(String::from("")),
+                //     file
+                // );
+                shared_prefix = Some(common_prefix(&file, &shared_prefix));
                 options.push(file);
             }
+
+            shared_prefix = Some(format!(
+                "{}{}{}",
+                cmd_part,
+                dir.as_ref()
+                    .map(|d| format!("{}/", d))
+                    .unwrap_or(String::from("")),
+                shared_prefix.unwrap_or(String::new())
+            ));
+
+            // dbg!(&shared_prefix);
         } else {
             for name in self
                 .executable_names
@@ -121,8 +136,13 @@ impl CustomRLCompleter {
             start = last_space;
         }
 
+        let elected_end = if elected.ends_with("/ ") {
+            elected.len() - 1
+        } else {
+            elected.len()
+        };
         let end = line.pos();
-        line.replace(start..end, elected, cl);
+        line.replace(start..end, &elected[..elected_end], cl);
     }
 
     fn update_multiple_match(
