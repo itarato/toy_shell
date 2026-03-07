@@ -49,7 +49,7 @@ impl Completer for BinaryAndFileCompleter {
                         candidates
                             .into_iter()
                             .map(|pair| Pair {
-                                display: pair.display,
+                                display: fix_path_display(&pair.display),
                                 replacement: fix_path_ending(&pair.replacement),
                             })
                             .collect(),
@@ -82,5 +82,13 @@ fn fix_path_ending(path: &str) -> String {
         path.to_string()
     } else {
         format!("{} ", path)
+    }
+}
+
+fn fix_path_display(path: &str) -> String {
+    if std::path::Path::new(path).is_dir() {
+        format!("{}/", path)
+    } else {
+        path.to_string()
     }
 }
