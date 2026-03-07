@@ -11,7 +11,7 @@ use is_executable::IsExecutable;
 use redirect::*;
 use rustyline::{
     history::{DefaultHistory, History},
-    Editor,
+    Config, Editor,
 };
 #[allow(unused_imports)]
 use std::io::{self, Write};
@@ -247,7 +247,7 @@ enum ExecutionResult {
 
 fn execute_command(
     cmd_with_ctx: CommandWithContext,
-    rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
+    rl: &mut Editor<BinaryAndFileCompleter, DefaultHistory>,
     env_paths: &Vec<PathBuf>,
     original_input: &String,
     pipe_reader: Option<io::PipeReader>,
@@ -398,7 +398,7 @@ fn execute_command(
     ExecutionResult::None
 }
 
-fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHistory>) {
+fn append_to_history(path: String, rl: &mut Editor<BinaryAndFileCompleter, DefaultHistory>) {
     let f = fs::File::open(path).unwrap();
     for line in io::BufReader::new(f).lines() {
         if let Ok(line) = line {
@@ -411,7 +411,7 @@ fn append_to_history(path: String, rl: &mut Editor<CustomRLCompleter, DefaultHis
 
 fn save_history(
     path: &String,
-    rl: &mut Editor<CustomRLCompleter, DefaultHistory>,
+    rl: &mut Editor<BinaryAndFileCompleter, DefaultHistory>,
     should_append: bool,
     last_history_save_index: &mut usize,
 ) {
@@ -450,8 +450,13 @@ fn main() {
         .map(|v| std::env::split_paths(v).collect())
         .unwrap_or(vec![]);
 
-    let rl_completer = CustomRLCompleter::new(preload_exec_names(&env_paths));
-    let mut rl: Editor<CustomRLCompleter, DefaultHistory> = Editor::new().unwrap();
+    let rl_completer = BinaryAndFileCompleter::new(preload_exec_names(&env_paths));
+    let config = Config::builder()
+        .history_ignore_space(true)
+        .completion_type(rustyline::CompletionType::List)
+        .build();
+    let mut rl: Editor<BinaryAndFileCompleter, DefaultHistory> =
+        Editor::with_config(config).unwrap();
 
     let history_file_name = env_vars
         .get("HISTFILE")
