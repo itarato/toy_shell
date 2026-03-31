@@ -6,6 +6,7 @@ pub(crate) enum Command {
     Unknown(String, Vec<String>),
     Cd(String),
     Pwd,
+    Jobs,
     History(usize),
     HistoryAppend(String),
     //          Path    Append?
@@ -27,6 +28,7 @@ impl Command {
             Command::Pwd => "pwd".into(),
             Command::Cd(_) => "cd".into(),
             Command::Empty => "".into(),
+            Command::Jobs => "jobs".into(),
             Command::Invalid => unimplemented!(),
         }
     }

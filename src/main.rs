@@ -106,6 +106,8 @@ fn parse_command(raw: &str) -> PipedCommands {
             } else {
                 Command::Cd(raw_cmd.args[0].clone())
             }
+        } else if raw_cmd.name == "jobs" {
+            Command::Jobs
         } else if raw_cmd.name.is_empty() {
             Command::Empty
         } else {
@@ -362,6 +364,7 @@ fn execute_command(
                 cmd_with_ctx.stderr_redirect,
             ),
         },
+        Command::Jobs => {}
         Command::History(n) => {
             let mut history_str = String::new();
             let history_len = rl.history().len();
