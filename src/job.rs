@@ -1,27 +1,39 @@
 use std::process::Child;
 
-pub(crate) struct Jobs(Vec<Job>);
+pub(crate) struct Jobs {
+    jobs: Vec<Job>,
+    counter: usize,
+}
 
 impl Jobs {
     pub(crate) fn new() -> Self {
-        Self(vec![])
+        Self {
+            jobs: vec![],
+            counter: 0,
+        }
     }
 
     pub(crate) fn clean_up(&mut self) {
-        self.0.retain_mut(|job| job.status() == JobStatus::Running);
+        self.jobs
+            .retain_mut(|job| job.status() == JobStatus::Running);
     }
 
     pub(crate) fn push(&mut self, child: Child, command: String) {
-        self.0.push(Job { child, command });
+        self.counter += 1;
+        self.jobs.push(Job {
+            child,
+            command,
+            index: self.counter,
+        });
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.0.len()
+        self.jobs.len()
     }
 
     pub(crate) fn print_status_report(&mut self) {
-        let jobs_len = self.0.len();
-        for (i, job) in self.0.iter_mut().enumerate() {
+        let jobs_len = self.jobs.len();
+        for (i, job) in self.jobs.iter_mut().enumerate() {
             let mark = if i + 1 == jobs_len {
                 "+"
             } else if i + 2 == jobs_len {
@@ -40,7 +52,7 @@ impl Jobs {
             };
             println!(
                 "[{}]{}  {:<24}{}{}",
-                i + 1,
+                job.index,
                 mark,
                 status,
                 job.command.replace(" &", ""),
@@ -62,6 +74,7 @@ enum JobStatus {
 pub(crate) struct Job {
     child: Child,
     command: String,
+    index: usize,
 }
 
 impl Job {
