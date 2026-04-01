@@ -1,8 +1,9 @@
-use std::process::Child;
+use std::{collections::VecDeque, process::Child};
 
 pub(crate) struct Jobs {
     jobs: Vec<Job>,
     counter: usize,
+    recycled_counter: VecDeque<usize>,
 }
 
 impl Jobs {
@@ -10,20 +11,33 @@ impl Jobs {
         Self {
             jobs: vec![],
             counter: 0,
+            recycled_counter: VecDeque::new(),
         }
     }
 
     pub(crate) fn clean_up(&mut self) {
-        self.jobs
-            .retain_mut(|job| job.status() == JobStatus::Running);
+        self.jobs.retain_mut(|job| {
+            if job.status() == JobStatus::Running {
+                true
+            } else {
+                self.recycled_counter.push_back(job.index);
+                false
+            }
+        });
     }
 
     pub(crate) fn push(&mut self, child: Child, command: String) {
-        self.counter += 1;
+        let index = match self.recycled_counter.pop_front() {
+            Some(index) => index,
+            None => {
+                self.counter += 1;
+                self.counter
+            }
+        };
         self.jobs.push(Job {
             child,
             command,
-            index: self.counter,
+            index,
         });
     }
 
