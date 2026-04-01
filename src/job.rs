@@ -47,6 +47,8 @@ impl Jobs {
                 job_mark
             );
         }
+
+        self.clean_up();
     }
 }
 

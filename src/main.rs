@@ -552,8 +552,6 @@ fn main() {
         }
 
         for exec_result in exec_results {
-            jobs.clean_up();
-
             match exec_result {
                 ExecutionResult::Child { mut child } => {
                     child.wait().unwrap();
