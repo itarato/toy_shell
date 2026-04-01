@@ -10,6 +10,7 @@ enum CommandParseState {
 
 #[derive(Debug)]
 pub(crate) struct UnidentifiedCommand {
+    pub(crate) original: String,
     pub(crate) name: String,
     pub(crate) args: Vec<String>,
     pub(crate) is_job: bool,
@@ -165,6 +166,7 @@ impl ArgParser {
 
         if parts.is_empty() {
             Some(PipedUnidentifiedCommands(vec![UnidentifiedCommand {
+                original: String::new(),
                 name: "".into(),
                 args: vec![],
                 is_job: false,
@@ -178,6 +180,7 @@ impl ArgParser {
 
     fn build_unidentified_command(mut parts: Vec<String>) -> Option<PipedUnidentifiedCommands> {
         let mut piped_unidentified_commands = vec![];
+        let original = parts.join(" ");
 
         let mut stdout_redirect = None;
         let mut stderr_redirect = None;
@@ -235,6 +238,7 @@ impl ArgParser {
                     }
 
                     piped_unidentified_commands.push(UnidentifiedCommand {
+                        original: parts.join(" "),
                         name: name.clone(),
                         args: args.clone(),
                         is_job,
@@ -258,6 +262,7 @@ impl ArgParser {
         }
 
         piped_unidentified_commands.push(UnidentifiedCommand {
+            original: original,
             name: name.clone(),
             args: args.clone(),
             is_job,

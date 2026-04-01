@@ -2,6 +2,7 @@ mod arg_parser;
 mod command;
 mod common;
 mod completion;
+mod job;
 mod redirect;
 
 use arg_parser::*;
@@ -23,10 +24,11 @@ use std::{
     process::{Child, Stdio},
 };
 
-use crate::common::SHELL_BUILTIN_COMMANDS;
+use crate::{common::SHELL_BUILTIN_COMMANDS, job::Jobs};
 
 #[derive(Clone, Debug)]
 struct CommandWithContext {
+    original: String,
     cmd: Command,
     is_job: bool,
     stdout_redirect: MaybeRedirect,
@@ -39,6 +41,7 @@ struct PipedCommands(Vec<CommandWithContext>);
 impl PipedCommands {
     fn new_invalid() -> Self {
         Self(vec![CommandWithContext {
+            original: String::new(),
             cmd: Command::Invalid,
             is_job: false,
             stdout_redirect: None,
@@ -52,6 +55,7 @@ fn parse_command(raw: &str) -> PipedCommands {
         Some(v) => v.0,
         None => {
             return PipedCommands(vec![CommandWithContext {
+                original: String::new(),
                 cmd: Command::Invalid,
                 is_job: false,
                 stdout_redirect: None,
@@ -118,6 +122,7 @@ fn parse_command(raw: &str) -> PipedCommands {
         };
 
         cmds_with_context.push(CommandWithContext {
+            original: raw_cmd.original,
             cmd,
             is_job: raw_cmd.is_job,
             stdout_redirect: raw_cmd.stdout_redirect,
@@ -249,13 +254,15 @@ enum ExecutionResult {
     None,
     Child {
         child: Child,
-        is_job: bool,
     },
     ChildWithOutputHandling {
         child: Child,
-        is_job: bool,
         stdout_redirect: Option<Redirect>,
         stderr_redirect: Option<Redirect>,
+    },
+    ChildForBackground {
+        child: Child,
+        original: String,
     },
 }
 
@@ -268,6 +275,7 @@ fn execute_command(
     pipe_writer: Option<io::PipeWriter>,
     last_history_save_index: &mut usize,
     history_file_name: &String,
+    jobs: &Jobs,
 ) -> ExecutionResult {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
@@ -325,10 +333,16 @@ fn execute_command(
                 os_command.stdout(writer);
 
                 return match os_command.spawn() {
-                    Ok(child) => ExecutionResult::Child {
-                        child,
-                        is_job: cmd_with_ctx.is_job,
-                    },
+                    Ok(child) => {
+                        if cmd_with_ctx.is_job {
+                            ExecutionResult::ChildForBackground {
+                                child,
+                                original: cmd_with_ctx.original,
+                            }
+                        } else {
+                            ExecutionResult::Child { child }
+                        }
+                    }
                     Err(_) => {
                         output(
                             format!("{}: command not found", name),
@@ -348,12 +362,18 @@ fn execute_command(
             }
 
             if let Ok(child) = os_command.spawn() {
-                return ExecutionResult::ChildWithOutputHandling {
-                    child,
-                    is_job: cmd_with_ctx.is_job,
-                    stdout_redirect: cmd_with_ctx.stdout_redirect,
-                    stderr_redirect: cmd_with_ctx.stderr_redirect,
-                };
+                if cmd_with_ctx.is_job {
+                    return ExecutionResult::ChildForBackground {
+                        child,
+                        original: cmd_with_ctx.original,
+                    };
+                } else {
+                    return ExecutionResult::ChildWithOutputHandling {
+                        child,
+                        stdout_redirect: cmd_with_ctx.stdout_redirect,
+                        stderr_redirect: cmd_with_ctx.stderr_redirect,
+                    };
+                }
             } else {
                 output(
                     format!("{}: command not found", name),
@@ -380,7 +400,9 @@ fn execute_command(
                 cmd_with_ctx.stderr_redirect,
             ),
         },
-        Command::Jobs => {}
+        Command::Jobs => {
+            jobs.print_status_report();
+        }
         Command::History(n) => {
             let mut history_str = String::new();
             let history_len = rl.history().len();
@@ -486,7 +508,7 @@ fn main() {
     let _ = rl.load_history(&history_file_name);
     let mut last_history_save_index = 0usize;
 
-    let mut jobs: Vec<Child> = vec![];
+    let mut jobs = Jobs::new();
 
     loop {
         let buf = match rl.readline("$ ") {
@@ -522,6 +544,7 @@ fn main() {
                 pipe_writer.take(),
                 &mut last_history_save_index,
                 &history_file_name,
+                &jobs,
             );
             exec_results.push(result);
 
@@ -529,52 +552,40 @@ fn main() {
         }
 
         for exec_result in exec_results {
-            jobs.retain_mut(|child| match child.try_wait() {
-                Err(_) => false,
-                Ok(Some(_)) => false,
-                Ok(None) => true,
-            });
+            jobs.clean_up();
 
             match exec_result {
-                ExecutionResult::Child { mut child, is_job } => {
-                    if is_job {
-                        let pid = child.id();
-                        jobs.push(child);
-                        println!("[{}] {}", jobs.len(), pid);
-                    } else {
-                        child.wait().unwrap();
-                    }
+                ExecutionResult::Child { mut child } => {
+                    child.wait().unwrap();
                 }
                 ExecutionResult::ChildWithOutputHandling {
                     child,
-                    is_job,
                     stdout_redirect,
                     stderr_redirect,
                 } => {
-                    if is_job {
-                        let pid = child.id();
-                        jobs.push(child);
-                        println!("[{}] {}", jobs.len(), pid);
-                    } else {
-                        let child_output = child.wait_with_output().unwrap();
+                    let child_output = child.wait_with_output().unwrap();
 
-                        output(
-                            String::from_utf8(child_output.stdout)
-                                .unwrap()
-                                .trim_end()
-                                .into(),
-                            stdout_redirect,
-                            None,
-                        );
+                    output(
+                        String::from_utf8(child_output.stdout)
+                            .unwrap()
+                            .trim_end()
+                            .into(),
+                        stdout_redirect,
+                        None,
+                    );
 
-                        output_error(
-                            String::from_utf8(child_output.stderr)
-                                .unwrap()
-                                .trim_end()
-                                .into(),
-                            stderr_redirect,
-                        );
-                    }
+                    output_error(
+                        String::from_utf8(child_output.stderr)
+                            .unwrap()
+                            .trim_end()
+                            .into(),
+                        stderr_redirect,
+                    );
+                }
+                ExecutionResult::ChildForBackground { child, original } => {
+                    let pid = child.id();
+                    jobs.push(child, original);
+                    println!("[{}] {}", jobs.len(), pid);
                 }
                 ExecutionResult::None => {}
             };
