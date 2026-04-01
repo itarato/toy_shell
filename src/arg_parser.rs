@@ -12,6 +12,7 @@ enum CommandParseState {
 pub(crate) struct UnidentifiedCommand {
     pub(crate) name: String,
     pub(crate) args: Vec<String>,
+    pub(crate) is_job: bool,
     pub(crate) stdout_redirect: MaybeRedirect,
     pub(crate) stderr_redirect: MaybeRedirect,
 }
@@ -166,6 +167,7 @@ impl ArgParser {
             Some(PipedUnidentifiedCommands(vec![UnidentifiedCommand {
                 name: "".into(),
                 args: vec![],
+                is_job: false,
                 stdout_redirect: None,
                 stderr_redirect: None,
             }]))
@@ -182,6 +184,7 @@ impl ArgParser {
         let mut is_first = true;
         let mut name = String::new();
         let mut args = vec![];
+        let mut is_job = false;
 
         while !parts.is_empty() {
             let part = parts.remove(0);
@@ -234,16 +237,20 @@ impl ArgParser {
                     piped_unidentified_commands.push(UnidentifiedCommand {
                         name: name.clone(),
                         args: args.clone(),
+                        is_job,
                         stdout_redirect: stdout_redirect.clone(),
                         stderr_redirect: stderr_redirect.clone(),
                     });
 
                     name.clear();
                     args.clear();
+                    is_job = false;
                     stdout_redirect = None;
                     stderr_redirect = None;
 
                     is_first = true;
+                } else if part == "&" {
+                    is_job = true;
                 } else {
                     args.push(part);
                 }
@@ -253,6 +260,7 @@ impl ArgParser {
         piped_unidentified_commands.push(UnidentifiedCommand {
             name: name.clone(),
             args: args.clone(),
+            is_job,
             stdout_redirect: stdout_redirect.clone(),
             stderr_redirect: stderr_redirect.clone(),
         });

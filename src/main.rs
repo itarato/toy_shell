@@ -28,6 +28,7 @@ use crate::common::SHELL_BUILTIN_COMMANDS;
 #[derive(Clone, Debug)]
 struct CommandWithContext {
     cmd: Command,
+    is_job: bool,
     stdout_redirect: MaybeRedirect,
     stderr_redirect: MaybeRedirect,
 }
@@ -39,6 +40,7 @@ impl PipedCommands {
     fn new_invalid() -> Self {
         Self(vec![CommandWithContext {
             cmd: Command::Invalid,
+            is_job: false,
             stdout_redirect: None,
             stderr_redirect: None,
         }])
@@ -51,6 +53,7 @@ fn parse_command(raw: &str) -> PipedCommands {
         None => {
             return PipedCommands(vec![CommandWithContext {
                 cmd: Command::Invalid,
+                is_job: false,
                 stdout_redirect: None,
                 stderr_redirect: None,
             }])
@@ -116,6 +119,7 @@ fn parse_command(raw: &str) -> PipedCommands {
 
         cmds_with_context.push(CommandWithContext {
             cmd,
+            is_job: raw_cmd.is_job,
             stdout_redirect: raw_cmd.stdout_redirect,
             stderr_redirect: raw_cmd.stderr_redirect,
         });
@@ -243,8 +247,16 @@ fn preload_exec_names(env_paths: &Vec<PathBuf>) -> Vec<String> {
 
 enum ExecutionResult {
     None,
-    Child(Child),
-    ChildWithOutputHandling(Child, Option<Redirect>, Option<Redirect>),
+    Child {
+        child: Child,
+        is_job: bool,
+    },
+    ChildWithOutputHandling {
+        child: Child,
+        is_job: bool,
+        stdout_redirect: Option<Redirect>,
+        stderr_redirect: Option<Redirect>,
+    },
 }
 
 fn execute_command(
@@ -313,7 +325,10 @@ fn execute_command(
                 os_command.stdout(writer);
 
                 return match os_command.spawn() {
-                    Ok(child) => ExecutionResult::Child(child),
+                    Ok(child) => ExecutionResult::Child {
+                        child,
+                        is_job: cmd_with_ctx.is_job,
+                    },
                     Err(_) => {
                         output(
                             format!("{}: command not found", name),
@@ -333,11 +348,12 @@ fn execute_command(
             }
 
             if let Ok(child) = os_command.spawn() {
-                return ExecutionResult::ChildWithOutputHandling(
+                return ExecutionResult::ChildWithOutputHandling {
                     child,
-                    cmd_with_ctx.stdout_redirect,
-                    cmd_with_ctx.stderr_redirect,
-                );
+                    is_job: cmd_with_ctx.is_job,
+                    stdout_redirect: cmd_with_ctx.stdout_redirect,
+                    stderr_redirect: cmd_with_ctx.stderr_redirect,
+                };
             } else {
                 output(
                     format!("{}: command not found", name),
@@ -470,6 +486,8 @@ fn main() {
     let _ = rl.load_history(&history_file_name);
     let mut last_history_save_index = 0usize;
 
+    let mut jobs: Vec<Child> = vec![];
+
     loop {
         let buf = match rl.readline("$ ") {
             Ok(s) => {
@@ -511,33 +529,52 @@ fn main() {
         }
 
         for exec_result in exec_results {
+            jobs.retain_mut(|child| match child.try_wait() {
+                Err(_) => false,
+                Ok(Some(_)) => false,
+                Ok(None) => true,
+            });
+
             match exec_result {
-                ExecutionResult::Child(mut child) => {
-                    child.wait().unwrap();
+                ExecutionResult::Child { mut child, is_job } => {
+                    if is_job {
+                        let pid = child.id();
+                        jobs.push(child);
+                        println!("[{}] {}", jobs.len(), pid);
+                    } else {
+                        child.wait().unwrap();
+                    }
                 }
-                ExecutionResult::ChildWithOutputHandling(
+                ExecutionResult::ChildWithOutputHandling {
                     child,
+                    is_job,
                     stdout_redirect,
                     stderr_redirect,
-                ) => {
-                    let child_output = child.wait_with_output().unwrap();
+                } => {
+                    if is_job {
+                        let pid = child.id();
+                        jobs.push(child);
+                        println!("[{}] {}", jobs.len(), pid);
+                    } else {
+                        let child_output = child.wait_with_output().unwrap();
 
-                    output(
-                        String::from_utf8(child_output.stdout)
-                            .unwrap()
-                            .trim_end()
-                            .into(),
-                        stdout_redirect,
-                        None,
-                    );
+                        output(
+                            String::from_utf8(child_output.stdout)
+                                .unwrap()
+                                .trim_end()
+                                .into(),
+                            stdout_redirect,
+                            None,
+                        );
 
-                    output_error(
-                        String::from_utf8(child_output.stderr)
-                            .unwrap()
-                            .trim_end()
-                            .into(),
-                        stderr_redirect,
-                    );
+                        output_error(
+                            String::from_utf8(child_output.stderr)
+                                .unwrap()
+                                .trim_end()
+                                .into(),
+                            stderr_redirect,
+                        );
+                    }
                 }
                 ExecutionResult::None => {}
             };
