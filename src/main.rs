@@ -401,7 +401,7 @@ fn execute_command(
             ),
         },
         Command::Jobs => {
-            jobs.print_status_report();
+            jobs.print_status_report(false);
         }
         Command::History(n) => {
             let mut history_str = String::new();
@@ -511,6 +511,8 @@ fn main() {
     let mut jobs = Jobs::new();
 
     loop {
+        jobs.print_status_report(true);
+
         let buf = match rl.readline("$ ") {
             Ok(s) => {
                 rl.add_history_entry(&s).unwrap();

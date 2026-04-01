@@ -31,9 +31,13 @@ impl Jobs {
         self.jobs.len()
     }
 
-    pub(crate) fn print_status_report(&mut self) {
+    pub(crate) fn print_status_report(&mut self, only_recycle: bool) {
         let jobs_len = self.jobs.len();
         for (i, job) in self.jobs.iter_mut().enumerate() {
+            if only_recycle && job.status() != JobStatus::Done {
+                continue;
+            }
+
             let mark = if i + 1 == jobs_len {
                 "+"
             } else if i + 2 == jobs_len {
