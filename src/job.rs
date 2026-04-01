@@ -1,9 +1,9 @@
-use std::{collections::VecDeque, process::Child};
+use std::{collections::BTreeSet, process::Child};
 
 pub(crate) struct Jobs {
     jobs: Vec<Job>,
     counter: usize,
-    recycled_counter: VecDeque<usize>,
+    recycled_counter: BTreeSet<usize>,
 }
 
 impl Jobs {
@@ -11,7 +11,7 @@ impl Jobs {
         Self {
             jobs: vec![],
             counter: 0,
-            recycled_counter: VecDeque::new(),
+            recycled_counter: BTreeSet::new(),
         }
     }
 
@@ -20,14 +20,14 @@ impl Jobs {
             if job.status() == JobStatus::Running {
                 true
             } else {
-                self.recycled_counter.push_back(job.index);
+                self.recycled_counter.insert(job.index);
                 false
             }
         });
     }
 
     pub(crate) fn push(&mut self, child: Child, command: String) {
-        let index = match self.recycled_counter.pop_front() {
+        let index = match self.recycled_counter.pop_first() {
             Some(index) => index,
             None => {
                 self.counter += 1;
