@@ -8,11 +8,7 @@ impl Jobs {
     }
 
     pub(crate) fn clean_up(&mut self) {
-        self.0.retain_mut(|job| match job.child.try_wait() {
-            Err(_) => false,
-            Ok(Some(_)) => false,
-            Ok(None) => true,
-        });
+        self.0.retain_mut(|job| job.status() == JobStatus::Running);
     }
 
     pub(crate) fn push(&mut self, child: Child, command: String) {
@@ -23,21 +19,55 @@ impl Jobs {
         self.0.len()
     }
 
-    pub(crate) fn print_status_report(&self) {
-        for (i, job) in self.0.iter().enumerate() {
-            let mark = if i + 1 == self.0.len() {
+    pub(crate) fn print_status_report(&mut self) {
+        let jobs_len = self.0.len();
+        for (i, job) in self.0.iter_mut().enumerate() {
+            let mark = if i + 1 == jobs_len {
                 "+"
-            } else if i + 2 == self.0.len() {
+            } else if i + 2 == jobs_len {
                 "-"
             } else {
                 " "
             };
-            println!("[{}]{}  {:<24}{}", i + 1, mark, "Running", job.command);
+            let status = match job.status() {
+                JobStatus::Done => "Done",
+                JobStatus::Error => "Error",
+                JobStatus::Running => "Running",
+            };
+            let job_mark = match job.status() {
+                JobStatus::Done | JobStatus::Error => "",
+                JobStatus::Running => " &",
+            };
+            println!(
+                "[{}]{}  {:<24}{}{}",
+                i + 1,
+                mark,
+                status,
+                job.command.replace(" &", ""),
+                job_mark
+            );
         }
     }
+}
+
+#[derive(PartialEq, Eq)]
+enum JobStatus {
+    Running,
+    Done,
+    Error,
 }
 
 pub(crate) struct Job {
     child: Child,
     command: String,
+}
+
+impl Job {
+    fn status(&mut self) -> JobStatus {
+        match self.child.try_wait() {
+            Err(_) => JobStatus::Error,
+            Ok(Some(_)) => JobStatus::Done,
+            Ok(None) => JobStatus::Running,
+        }
+    }
 }

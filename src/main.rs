@@ -275,7 +275,7 @@ fn execute_command(
     pipe_writer: Option<io::PipeWriter>,
     last_history_save_index: &mut usize,
     history_file_name: &String,
-    jobs: &Jobs,
+    jobs: &mut Jobs,
 ) -> ExecutionResult {
     let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
@@ -544,7 +544,7 @@ fn main() {
                 pipe_writer.take(),
                 &mut last_history_save_index,
                 &history_file_name,
-                &jobs,
+                &mut jobs,
             );
             exec_results.push(result);
 
