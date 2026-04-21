@@ -10,6 +10,10 @@ pub(crate) enum Command {
     History(usize),
     HistoryAppend(String),
     CompleteGet(String /* command */),
+    CompleteSet {
+        script_path: String,
+        command: String,
+    },
     //          Path    Append?
     HistorySave(String, bool),
     Empty,
@@ -31,6 +35,7 @@ impl Command {
             Command::Empty => "".into(),
             Command::Jobs => "jobs".into(),
             Command::CompleteGet(_) => "complete".into(),
+            Command::CompleteSet { .. } => "complete".into(),
             Command::Invalid => unimplemented!(),
         }
     }

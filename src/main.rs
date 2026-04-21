@@ -118,6 +118,13 @@ fn parse_command(raw: &str) -> PipedCommands {
         } else if raw_cmd.name == "complete" {
             if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-p" {
                 Command::CompleteGet(raw_cmd.args[1].clone())
+            } else if raw_cmd.args.len() == 3 && raw_cmd.args[0] == "-C" {
+                let script_path = raw_cmd.args[1].clone();
+                let command = raw_cmd.args[2].clone();
+                Command::CompleteSet {
+                    script_path,
+                    command,
+                }
             } else {
                 Command::Invalid
             }
@@ -439,6 +446,10 @@ fn execute_command(
                 cmd_with_ctx.stderr_redirect,
             );
         }
+        Command::CompleteSet {
+            script_path,
+            command,
+        } => {}
         Command::Empty => {}
         Command::Invalid => output_error(
             format!("{}: command not found", original_input.trim()),
