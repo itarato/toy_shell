@@ -115,6 +115,8 @@ fn parse_command(raw: &str) -> PipedCommands {
             }
         } else if raw_cmd.name == "jobs" {
             Command::Jobs
+        } else if raw_cmd.name == "complete" {
+            Command::Complete
         } else if raw_cmd.name.is_empty() {
             Command::Empty
         } else {
@@ -427,6 +429,7 @@ fn execute_command(
             output(String::new(), cmd_with_ctx.stdout_redirect, pipe_writer);
             output_error(String::new(), cmd_with_ctx.stderr_redirect);
         }
+        Command::Complete => {}
         Command::Empty => {}
         Command::Invalid => output_error(
             format!("{}: command not found", original_input.trim()),

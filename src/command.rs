@@ -9,6 +9,7 @@ pub(crate) enum Command {
     Jobs,
     History(usize),
     HistoryAppend(String),
+    Complete,
     //          Path    Append?
     HistorySave(String, bool),
     Empty,
@@ -29,6 +30,7 @@ impl Command {
             Command::Cd(_) => "cd".into(),
             Command::Empty => "".into(),
             Command::Jobs => "jobs".into(),
+            Command::Complete => "complete".into(),
             Command::Invalid => unimplemented!(),
         }
     }
