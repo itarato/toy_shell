@@ -20,6 +20,10 @@ pub(crate) const SHELL_BUILTIN_COMMANDS: [&'static str; 8] = [
     "echo", "type", "exit", "pwd", "cd", "history", "jobs", "complete",
 ];
 
+pub(crate) fn parse_command_name(line: &str) -> &str {
+    line.split(" ").next().unwrap()
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct CommandWithContext {
     pub(crate) original: String,
@@ -314,5 +318,15 @@ pub(crate) fn save_history(
 
     if should_append {
         *last_history_save_index = rl.history().len();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::common::parse_command_name;
+
+    #[test]
+    fn test_parse_command_name() {
+        assert_eq!("docker", parse_command_name("docker something 123"));
     }
 }

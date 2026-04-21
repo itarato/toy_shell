@@ -1,8 +1,10 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     io::{self, Write},
     path::PathBuf,
     process::Stdio,
+    rc::Rc,
 };
 
 use rustyline::{
@@ -13,14 +15,12 @@ use rustyline::{
 use crate::{command::Command, common::*, completion::BinaryAndFileCompleter, job::Jobs};
 
 pub(crate) struct ShellContext {
-    completions: HashMap<String /* command */, String /* script path */>,
+    completions: Rc<RefCell<HashMap<String /* command */, String /* script path */>>>,
 }
 
 impl ShellContext {
-    pub(crate) fn new() -> Self {
-        Self {
-            completions: HashMap::new(),
-        }
+    pub(crate) fn new(completions: Rc<RefCell<HashMap<String, String>>>) -> Self {
+        Self { completions }
     }
 
     pub(crate) fn execute_command(
@@ -189,7 +189,7 @@ impl ShellContext {
                 output_error(String::new(), cmd_with_ctx.stderr_redirect);
             }
             Command::CompleteGet(cmd) => {
-                if let Some(script_path) = self.completions.get(&cmd) {
+                if let Some(script_path) = self.completions.borrow().get(&cmd) {
                     output(
                         format!("complete -C '{}' {}", script_path, cmd),
                         cmd_with_ctx.stdout_redirect,
@@ -206,7 +206,7 @@ impl ShellContext {
                 script_path,
                 command,
             } => {
-                self.completions.insert(command, script_path);
+                self.completions.borrow_mut().insert(command, script_path);
             }
             Command::Empty => {}
             Command::Invalid => output_error(

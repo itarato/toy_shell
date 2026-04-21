@@ -8,9 +8,9 @@ mod shell_context;
 
 use completion::*;
 use rustyline::{history::DefaultHistory, Config, Editor};
-use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{common::*, job::Jobs, shell_context::ShellContext};
 
@@ -25,7 +25,9 @@ fn main() {
         .map(|v| std::env::split_paths(v).collect())
         .unwrap_or(vec![]);
 
-    let rl_completer = BinaryAndFileCompleter::new(preload_exec_names(&env_paths));
+    let completions = Rc::new(RefCell::new(HashMap::new()));
+    let rl_completer =
+        BinaryAndFileCompleter::new(preload_exec_names(&env_paths), completions.clone());
     let config = Config::builder()
         .history_ignore_space(true)
         .completion_type(rustyline::CompletionType::List)
@@ -43,7 +45,7 @@ fn main() {
     let mut last_history_save_index = 0usize;
 
     let mut jobs = Jobs::new();
-    let mut shell_ctx = ShellContext::new();
+    let mut shell_ctx = ShellContext::new(completions);
 
     loop {
         jobs.print_status_report(true);
