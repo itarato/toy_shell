@@ -19,9 +19,16 @@ fn run_completion_script(
     command_name: String,
     current_partial: String,
     previous_word: String,
+    comp_line: String,
+    comp_point: usize,
 ) -> Vec<String> {
+    let env_vars: HashMap<String, String> = HashMap::from([
+        ("COMP_LINE".to_string(), comp_line),
+        ("COMP_POINT".to_string(), comp_point.to_string()),
+    ]);
     let output = std::process::Command::new(path)
         .args([command_name, current_partial, previous_word])
+        .envs(&env_vars)
         .output()
         .expect("Failed to execute completion script");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -77,6 +84,8 @@ impl Completer for BinaryAndFileCompleter {
                     command_name.clone(),
                     current_partial,
                     previous_word,
+                    line.to_string(),
+                    pos,
                 );
 
                 let custom_candidates = options
