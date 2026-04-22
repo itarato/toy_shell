@@ -25,7 +25,7 @@ pub(crate) fn parse_completion_args_from_line(line: &str) -> [String; 3] {
 
     let command = parts[0].to_string();
     let current = parts.last().unwrap().to_string();
-    let prev = if parts.len() >= 3 {
+    let prev = if parts.len() >= 2 {
         parts[parts.len() - 2].to_string()
     } else {
         String::new()
@@ -357,7 +357,7 @@ mod test {
             [
                 "docker".to_string(),
                 "something".to_string(),
-                "".to_string()
+                "docker".to_string()
             ],
             parse_completion_args_from_line("docker something")
         );
