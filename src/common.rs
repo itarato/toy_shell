@@ -20,8 +20,23 @@ pub(crate) const SHELL_BUILTIN_COMMANDS: [&'static str; 8] = [
     "echo", "type", "exit", "pwd", "cd", "history", "jobs", "complete",
 ];
 
-pub(crate) fn parse_command_name(line: &str) -> &str {
-    line.split(" ").next().unwrap()
+pub(crate) fn parse_completion_args_from_line(line: &str) -> [String; 3] {
+    let parts = line.split(" ").collect::<Vec<_>>();
+
+    let command = parts[0].to_string();
+    let current = parts.last().unwrap().to_string();
+    let prev = if parts.len() >= 3 {
+        parts[parts.len() - 2].to_string()
+    } else {
+        String::new()
+    };
+
+    [command, current, prev]
+}
+
+pub(crate) fn split_line_to_prefix_and_last_completion(line: &str) -> (&str, &str) {
+    let last_space = line.len() - line.chars().rev().position(|c| c == ' ').unwrap();
+    (&line[0..last_space - 1], &line[last_space..])
 }
 
 #[derive(Clone, Debug)]
@@ -323,10 +338,50 @@ pub(crate) fn save_history(
 
 #[cfg(test)]
 mod test {
-    use crate::common::parse_command_name;
+    use crate::common::{
+        parse_completion_args_from_line, split_line_to_prefix_and_last_completion,
+    };
 
     #[test]
     fn test_parse_command_name() {
-        assert_eq!("docker", parse_command_name("docker something 123"));
+        assert_eq!(
+            [
+                "docker".to_string(),
+                "123".to_string(),
+                "something".to_string()
+            ],
+            parse_completion_args_from_line("docker something 123")
+        );
+
+        assert_eq!(
+            [
+                "docker".to_string(),
+                "something".to_string(),
+                "".to_string()
+            ],
+            parse_completion_args_from_line("docker something")
+        );
+
+        assert_eq!(
+            [
+                "docker".to_string(),
+                "".to_string(),
+                "something".to_string()
+            ],
+            parse_completion_args_from_line("docker something ")
+        );
+    }
+
+    #[test]
+    fn test_split_line_to_prefix_and_last_completion() {
+        assert_eq!(
+            ("docker something", "123"),
+            split_line_to_prefix_and_last_completion("docker something 123"),
+        );
+
+        assert_eq!(
+            ("docker something 123", ""),
+            split_line_to_prefix_and_last_completion("docker something 123 "),
+        );
     }
 }

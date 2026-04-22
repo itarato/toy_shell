@@ -9,10 +9,19 @@ use rustyline::{
     Helper, Highlighter, Hinter, Validator,
 };
 
-use crate::common::{parse_command_name, SHELL_BUILTIN_COMMANDS};
+use crate::common::{
+    parse_completion_args_from_line, split_line_to_prefix_and_last_completion,
+    SHELL_BUILTIN_COMMANDS,
+};
 
-fn run_completion_script(path: &str) -> Vec<String> {
+fn run_completion_script(
+    path: &str,
+    command_name: String,
+    current_partial: String,
+    previous_word: String,
+) -> Vec<String> {
     let output = std::process::Command::new(path)
+        .args([command_name, current_partial, previous_word])
         .output()
         .expect("Failed to execute completion script");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -59,16 +68,23 @@ impl Completer for BinaryAndFileCompleter {
         ctx: &rustyline::Context<'_>,
     ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
         if line.contains(' ') {
-            let command_name = parse_command_name(line);
-            if let Some(completion_script) = self.completions.borrow().get(command_name) {
-                let options = run_completion_script(completion_script);
+            let (prefix, _) = split_line_to_prefix_and_last_completion(line);
+            let [command_name, current_partial, previous_word] =
+                parse_completion_args_from_line(line);
+            if let Some(completion_script) = self.completions.borrow().get(&command_name) {
+                let options = run_completion_script(
+                    completion_script,
+                    command_name.clone(),
+                    current_partial,
+                    previous_word,
+                );
 
                 let custom_candidates = options
                     .iter()
                     .filter_map(|name| {
                         Some(Pair {
                             display: name.to_string(),
-                            replacement: format!("{} {} ", command_name, name),
+                            replacement: format!("{} {} ", prefix, name),
                         })
                     })
                     .collect();
