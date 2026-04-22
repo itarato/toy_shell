@@ -14,6 +14,7 @@ pub(crate) enum Command {
         script_path: String,
         command: String,
     },
+    CompleteRemove(String),
     //          Path    Append?
     HistorySave(String, bool),
     Empty,
@@ -36,6 +37,7 @@ impl Command {
             Command::Jobs => "jobs".into(),
             Command::CompleteGet(_) => "complete".into(),
             Command::CompleteSet { .. } => "complete".into(),
+            Command::CompleteRemove(_) => "complete".into(),
             Command::Invalid => unimplemented!(),
         }
     }

@@ -129,7 +129,9 @@ pub(crate) fn parse_command(raw: &str) -> PipedCommands {
         } else if raw_cmd.name == "jobs" {
             Command::Jobs
         } else if raw_cmd.name == "complete" {
-            if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-p" {
+            if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-r" {
+                Command::CompleteRemove(raw_cmd.args[1].clone())
+            } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-p" {
                 Command::CompleteGet(raw_cmd.args[1].clone())
             } else if raw_cmd.args.len() == 3 && raw_cmd.args[0] == "-C" {
                 let script_path = raw_cmd.args[1].clone();

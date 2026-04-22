@@ -208,6 +208,9 @@ impl ShellContext {
             } => {
                 self.completions.borrow_mut().insert(command, script_path);
             }
+            Command::CompleteRemove(cmd) => {
+                self.completions.borrow_mut().remove(&cmd);
+            }
             Command::Empty => {}
             Command::Invalid => output_error(
                 format!("{}: command not found", original_input.trim()),
