@@ -236,7 +236,7 @@ impl ShellContext {
 
                 let first_char = varname.chars().next().unwrap();
                 if !(first_char == '_' || first_char.is_ascii_alphabetic())
-                    && varname
+                    || !varname
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '_')
                 {
