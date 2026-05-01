@@ -220,14 +220,28 @@ impl ShellContext {
                         pipe_writer,
                     );
                 } else {
-                    output(
+                    output_error(
                         format!("declare: {}: not found", varname),
-                        cmd_with_ctx.stdout_redirect,
-                        pipe_writer,
+                        cmd_with_ctx.stderr_redirect,
                     );
                 }
             }
             Command::Declare(varname, value) => {
+                if varname.is_empty() {
+                    output_error(
+                        format!("declare: `{}={}': not a valid identifier", varname, value),
+                        cmd_with_ctx.stderr_redirect.clone(),
+                    );
+                }
+
+                let first_char = varname.chars().next().unwrap();
+                if !(first_char == '_' || first_char.is_ascii_alphabetic()) {
+                    output_error(
+                        format!("declare: `{}={}': not a valid identifier", varname, value),
+                        cmd_with_ctx.stderr_redirect,
+                    );
+                }
+
                 declared_vars.insert(varname, value);
             }
             Command::Empty => {}
