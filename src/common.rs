@@ -143,6 +143,12 @@ pub(crate) fn parse_command(raw: &str) -> PipedCommands {
             } else {
                 Command::Invalid
             }
+        } else if raw_cmd.name == "declare" {
+            if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-p" {
+                Command::DeclarePrint(raw_cmd.args[1].to_string())
+            } else {
+                Command::Invalid
+            }
         } else if raw_cmd.name.is_empty() {
             Command::Empty
         } else {

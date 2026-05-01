@@ -211,6 +211,13 @@ impl ShellContext {
             Command::CompleteRemove(cmd) => {
                 self.completions.borrow_mut().remove(&cmd);
             }
+            Command::DeclarePrint(varname) => {
+                output(
+                    format!("declare: {}: not found", varname),
+                    cmd_with_ctx.stdout_redirect,
+                    pipe_writer,
+                );
+            }
             Command::Empty => {}
             Command::Invalid => output_error(
                 format!("{}: command not found", original_input.trim()),
