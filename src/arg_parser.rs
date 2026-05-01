@@ -26,13 +26,15 @@ impl UnidentifiedCommand {
             .args
             .clone()
             .into_iter()
-            .map(|name| {
-                if name.starts_with("$") {
-                    let suffix = &name[1..];
-                    declared_vars.get(suffix).cloned().unwrap_or(name)
-                } else {
-                    name
+            .map(|mut name| {
+                for (varname, value) in declared_vars {
+                    let pat = format!("${}", varname);
+                    name = name.replace(&pat, value);
+
+                    let pat = format!("${{{}}}", varname);
+                    name = name.replace(&pat, value);
                 }
+                name
             })
             .collect();
 
