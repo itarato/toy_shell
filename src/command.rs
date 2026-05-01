@@ -18,6 +18,7 @@ pub(crate) enum Command {
     //          Path    Append?
     HistorySave(String, bool),
     DeclarePrint(String),
+    Declare(String /* name */, String /* value */),
     Empty,
     Invalid,
 }
@@ -41,6 +42,7 @@ impl Command {
             Command::CompleteRemove(_) => "complete".into(),
             Command::Invalid => unimplemented!(),
             Command::DeclarePrint(_) => "declare".into(),
+            Command::Declare(_, _) => "declare".into(),
         }
     }
 }

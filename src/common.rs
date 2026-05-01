@@ -7,6 +7,7 @@ use rustyline::{
     history::{DefaultHistory, History},
     Editor,
 };
+use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::{
@@ -63,7 +64,7 @@ impl PipedCommands {
     }
 }
 
-pub(crate) fn parse_command(raw: &str) -> PipedCommands {
+pub(crate) fn parse_command(raw: &str, declared_vars: &HashMap<String, String>) -> PipedCommands {
     let mut raw_cmds = match ArgParser::new(raw).parse() {
         Some(v) => v.0,
         None => {
@@ -79,7 +80,7 @@ pub(crate) fn parse_command(raw: &str) -> PipedCommands {
 
     let mut cmds_with_context = vec![];
     while !raw_cmds.is_empty() {
-        let raw_cmd = raw_cmds.remove(0);
+        let raw_cmd = raw_cmds.remove(0).replace_declared_vars(declared_vars);
         let cmd = if raw_cmd.name == "exit" {
             let exit_code = if raw_cmd.args.len() == 1 {
                 if let Ok(v) = i32::from_str_radix(&raw_cmd.args[0], 10) {
@@ -144,7 +145,14 @@ pub(crate) fn parse_command(raw: &str) -> PipedCommands {
                 Command::Invalid
             }
         } else if raw_cmd.name == "declare" {
-            if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-p" {
+            if raw_cmd.args.len() == 1 {
+                let parts = raw_cmd.args[0].split('=').collect::<Vec<_>>();
+                if parts.len() == 2 {
+                    Command::Declare(parts[0].to_string(), parts[1].to_string())
+                } else {
+                    Command::Invalid
+                }
+            } else if raw_cmd.args.len() == 2 && raw_cmd.args[0] == "-p" {
                 Command::DeclarePrint(raw_cmd.args[1].to_string())
             } else {
                 Command::Invalid

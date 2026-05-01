@@ -34,6 +34,7 @@ impl ShellContext {
         last_history_save_index: &mut usize,
         history_file_name: &String,
         jobs: &mut Jobs,
+        declared_vars: &mut HashMap<String, String>,
     ) -> ExecutionResult {
         let orig_cmd_name = cmd_with_ctx.cmd.name().clone();
 
@@ -212,11 +213,22 @@ impl ShellContext {
                 self.completions.borrow_mut().remove(&cmd);
             }
             Command::DeclarePrint(varname) => {
-                output(
-                    format!("declare: {}: not found", varname),
-                    cmd_with_ctx.stdout_redirect,
-                    pipe_writer,
-                );
+                if let Some(value) = declared_vars.get(&varname) {
+                    output(
+                        format!("declare -- {}={:?}", varname, value),
+                        cmd_with_ctx.stdout_redirect,
+                        pipe_writer,
+                    );
+                } else {
+                    output(
+                        format!("declare: {}: not found", varname),
+                        cmd_with_ctx.stdout_redirect,
+                        pipe_writer,
+                    );
+                }
+            }
+            Command::Declare(varname, value) => {
+                declared_vars.insert(varname, value);
             }
             Command::Empty => {}
             Command::Invalid => output_error(

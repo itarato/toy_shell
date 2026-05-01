@@ -46,6 +46,7 @@ fn main() {
 
     let mut jobs = Jobs::new();
     let mut shell_ctx = ShellContext::new(completions);
+    let mut declared_vars: HashMap<String, String> = HashMap::new();
 
     loop {
         jobs.print_status_report(true);
@@ -61,7 +62,7 @@ fn main() {
         };
 
         let mut exec_results = vec![];
-        let mut piped_cmds = parse_command(buf.trim()).0;
+        let mut piped_cmds = parse_command(buf.trim(), &declared_vars).0;
 
         let mut pipe_reader: Option<io::PipeReader> = None;
         let mut pipe_writer: Option<io::PipeWriter> = None;
@@ -84,6 +85,7 @@ fn main() {
                 &mut last_history_save_index,
                 &history_file_name,
                 &mut jobs,
+                &mut declared_vars,
             );
             exec_results.push(result);
 

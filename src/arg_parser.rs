@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::redirect::{MaybeRedirect, Redirect};
 
 #[derive(PartialEq, Eq)]
@@ -16,6 +18,26 @@ pub(crate) struct UnidentifiedCommand {
     pub(crate) is_job: bool,
     pub(crate) stdout_redirect: MaybeRedirect,
     pub(crate) stderr_redirect: MaybeRedirect,
+}
+
+impl UnidentifiedCommand {
+    pub(crate) fn replace_declared_vars(mut self, declared_vars: &HashMap<String, String>) -> Self {
+        self.args = self
+            .args
+            .clone()
+            .into_iter()
+            .map(|name| {
+                if name.starts_with("$") {
+                    let suffix = &name[1..];
+                    declared_vars.get(suffix).cloned().unwrap_or(name)
+                } else {
+                    name
+                }
+            })
+            .collect();
+
+        self
+    }
 }
 
 pub(crate) struct PipedUnidentifiedCommands(pub(crate) Vec<UnidentifiedCommand>);
