@@ -16,8 +16,8 @@ use std::{
     process::Child,
 };
 
-pub(crate) const SHELL_BUILTIN_COMMANDS: [&'static str; 8] = [
-    "echo", "type", "exit", "pwd", "cd", "history", "jobs", "complete",
+pub(crate) const SHELL_BUILTIN_COMMANDS: [&'static str; 9] = [
+    "echo", "type", "exit", "pwd", "cd", "history", "jobs", "complete", "declare",
 ];
 
 pub(crate) fn parse_completion_args_from_line(line: &str) -> [String; 3] {
