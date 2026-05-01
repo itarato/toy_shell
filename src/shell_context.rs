@@ -235,7 +235,11 @@ impl ShellContext {
                 }
 
                 let first_char = varname.chars().next().unwrap();
-                if !(first_char == '_' || first_char.is_ascii_alphabetic()) {
+                if !(first_char == '_' || first_char.is_ascii_alphabetic())
+                    && varname
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                {
                     output_error(
                         format!("declare: `{}={}': not a valid identifier", varname, value),
                         cmd_with_ctx.stderr_redirect,
